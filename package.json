@@ -1,0 +1,13 @@
+{
+  "name": "agent-auth-network",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter app dev",
+    "build": "pnpm --filter app build",
+    "lint": "pnpm --filter app lint",
+    "typecheck": "pnpm --filter app typecheck",
+    "forge:build": "forge build",
+    "forge:test": "forge test"
+  }
+}
