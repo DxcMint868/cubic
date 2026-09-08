@@ -28,34 +28,55 @@ export default function Home() {
       >
         <h1
           style={{
-            fontSize: "clamp(36px, 4.2vw, 60px)",
-            fontWeight: 550,
-            letterSpacing: "-0.025em",
-            lineHeight: 1.05,
+            fontSize: "clamp(72px, 9vw, 128px)",
+            fontWeight: 800,
+            letterSpacing: "-0.03em",
+            lineHeight: 0.95,
             color: "#f4f4f4",
           }}
         >
-          Agent Authorization
-          <br />
-          Network
+          Cubic
+          <span
+            aria-hidden
+            style={{
+              display: "inline-block",
+              width: "0.13em",
+              height: "0.13em",
+              marginLeft: "0.08em",
+              border: "0.028em solid #f4f4f4",
+              borderRadius: "18%",
+            }}
+          />
         </h1>
 
         <p
           style={{
-            marginTop: 22,
-            fontSize: 16,
-            lineHeight: 1.6,
-            color: "#8a8a8a",
-            maxWidth: 420,
+            marginTop: 26,
+            fontSize: 20,
+            fontWeight: 500,
+            letterSpacing: "-0.01em",
+            color: "#e0e0e0",
           }}
         >
-          Cloudflare for agent actions — every tool call evaluated against
-          identity, intent, policy, and trust.
+          Cloudflare for agent actions.
         </p>
 
         <p
           style={{
-            marginTop: 28,
+            marginTop: 12,
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: "#8a8a8a",
+            maxWidth: 440,
+          }}
+        >
+          Every agent tool call checked against identity, intent, policy, and
+          trust.
+        </p>
+
+        <p
+          style={{
+            marginTop: 30,
             fontFamily: mono,
             fontSize: 12,
             letterSpacing: "0.12em",
@@ -81,10 +102,8 @@ export default function Home() {
         style={{
           flex: 1,
           position: "relative",
-          maskImage:
-            "linear-gradient(to right, transparent 0%, black 22%)",
-          WebkitMaskImage:
-            "linear-gradient(to right, transparent 0%, black 22%)",
+          maskImage: "linear-gradient(to right, transparent 0%, black 22%)",
+          WebkitMaskImage: "linear-gradient(to right, transparent 0%, black 22%)",
         }}
       >
         <NetworkCanvas />

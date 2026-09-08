@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
+import { Darker_Grotesque } from "next/font/google";
 import "./globals.css";
 
+const darkerGrotesque = Darker_Grotesque({
+  subsets: ["latin"],
+  weight: ["400", "500", "700", "800"],
+});
+
 export const metadata: Metadata = {
-  title: "Agent Authorization Network",
-  description: "Cloudflare for agent actions — authorize agent tool calls with identity, policy, and trust",
+  title: "Cubic — Cloudflare for agent actions",
+  description:
+    "Every agent tool call checked against identity, intent, policy, and trust.",
 };
 
 export default function RootLayout({
@@ -13,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={darkerGrotesque.className}>{children}</body>
     </html>
   );
 }
