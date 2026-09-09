@@ -19,7 +19,8 @@ This is the project's hot-memory layer: the actively maintained working fact sto
 Update this section as implementation progresses.
 
 ### Active Work
-- [ ] Define the first end-to-end MVP implementation.
+- [x] Bootstrap planning complete — 11 plan files in `.agents/plans/` (see Recent Changes). Execution not started.
+- [ ] Define the first end-to-end MVP implementation. (now covered by plan-00..plan-10)
 - [ ] Implement the authorization gateway and capability model.
 - [ ] Integrate MCP as the tool boundary.
 - [ ] Integrate ERC-8004 / The Graph context.
@@ -34,8 +35,14 @@ Update this section as implementation progresses.
 - `contracts/` is a Foundry/Solidity project (forge 1.5.1, solc 0.8.24).
 - `pnpm dev` / `pnpm build` / `pnpm typecheck` run app commands from root.
 - `pnpm forge:build` / `pnpm forge:test` run contract commands from root.
+- **Plans convention**: every implementation plan lives in `.agents/plans/` as a markdown file with front matter `guide:` referencing **exactly one** `.agents/guides/*.md` file, plus tasks and acceptance criteria. Current set: `plan-00-architecture` (shared baseline: data/event model, API contracts, integration boundaries) + `plan-01-foundation` → `plan-10-demo-adversarial` (build-order slices), all referencing `.agents/guides/guide-01-bootstrap.md`.
+- **Gateway placement**: gateway runtime lives in `app/src/server/` (plain server modules, Next.js route handlers as thin adapters). No third root package.
+- **Storage**: online PostgreSQL via user-supplied `DATABASE_URL` (in `app/.env.local`, never committed); drizzle-orm + postgres.js + drizzle-kit migrations; zod for validation. Seed scripts must only touch demo-tenant rows (shared DB).
+- **No new Solidity contracts in the MVP** (identity/reputation via Agent0/ERC-8004 subgraphs; Hedera requirement is the live x402 service + Blocky402 settlement). Foundry scaffold stays untouched.
+- **Testing**: vitest for server units (introduced in plan-01); root gains `pnpm test`.
 
 ### Recent Changes
+- **Bootstrap planning complete (2026-09-10)**: created 11 implementation plans in `.agents/plans/` — `plan-00-architecture.md` (shared baseline: module layout under `app/src/server/`, 13-table Postgres schema, canonical 17-type event model, API route table, MCP/Ledger/Hedera/Graph boundaries, "One Thing" demo flow) plus `plan-01-foundation` → `plan-10-demo-adversarial` following the guide's build order. All reference `.agents/guides/guide-01-bootstrap.md`. Notable environment facts recorded: `wallet-cli`/`ledger-cli` NOT installed (plan-06 starts with an install/verify spike); x402/Hedera package names must be verified in a plan-05 spike; GitNexus index name is stale.
 - Git init, monorepo structure, pnpm workspaces, Next.js App Router scaffold, Foundry project scaffold — all verified building clean.
 - Landing page (`app/src/app/page.tsx`) replaced with a pure black full-screen canvas; user is iterating on a logo concept from there. First `pnpm install` run at app level (node_modules was missing).
 - Logo concept (network squares forming a "C") shelved by user — instead built split landing page: left = product name + one-liner, right = live square-network canvas (`app/src/components/NetworkCanvas.tsx`, 2D canvas: jittered grid nodes, connective lines, traveling light pulses). Added `app/src/app/globals.css` (reset, black bg, blink keyframe). Layout is inline-styled for now, no design system yet.
