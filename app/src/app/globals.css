@@ -30,3 +30,38 @@ body {
     opacity: 0;
   }
 }
+
+.mono {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.link {
+  color: #8a8a8a;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.link:hover {
+  color: #fff;
+}
+
+.btn-outline {
+  display: inline-block;
+  padding: 9px 16px;
+  border: 1px solid #3a3a3a;
+  color: #e0e0e0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.btn-outline:hover {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
+}
