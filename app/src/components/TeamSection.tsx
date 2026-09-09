@@ -5,8 +5,8 @@ import MacWindow from "@/components/MacWindow";
 import DitherImage from "@/components/DitherImage";
 
 const tabs = [
-  { id: "tron", label: "tron.jpeg" },
-  { id: "min", label: "min.jpeg" },
+  { id: "tron", label: "tron.jpeg", brightness: 1.05 },
+  { id: "min", label: "min.jpeg", brightness: 0.85 },
 ];
 
 const ROTATE_MS = 7000;
@@ -81,6 +81,7 @@ export default function TeamSection() {
                   src={`/dev_imgs/${t.id}.jpeg`}
                   alt={t.label}
                   label={`${t.id.toUpperCase()} — 1:1`}
+                  brightness={t.brightness}
                   style={{ width: "100%", height: "100%", border: "none" }}
                 />
               </div>

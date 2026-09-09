@@ -6,11 +6,13 @@ export default function DitherImage({
   src,
   alt,
   label,
+  brightness = 1.05,
   style,
 }: {
   src: string;
   alt: string;
   label: string;
+  brightness?: number;
   style?: React.CSSProperties;
 }) {
   const [failed, setFailed] = useState(false);
@@ -52,7 +54,7 @@ export default function DitherImage({
             height: "100%",
             objectFit: "cover",
             display: "block",
-            filter: "grayscale(1) contrast(1.4) brightness(1.05)",
+            filter: `grayscale(1) contrast(1.4) brightness(${brightness})`,
           }}
         />
       )}
