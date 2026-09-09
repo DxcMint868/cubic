@@ -2,7 +2,7 @@
 
 You are implementing exactly ONE plan of the Cubic MVP:
 `.agents/plans/plan-06-ledger-trust.md`
-You are already on branch `plan-06` in this worktree. Do not switch plans, do not implement other plans' scope, do not touch main. A sibling agent is simultaneously implementing plan-05 (Hedera x402) on its own branch — stay in your fence and you will not collide.
+You are already on branch `plan-06` in your assigned working directory. Do not switch plans, do not implement other plans' scope, do not touch main. A sibling agent is simultaneously implementing plan-05 (Hedera x402) on its own branch — stay in your fence and you will not collide.
 
 READ FIRST, in this order:
 1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it)

@@ -2,7 +2,7 @@
 
 You are implementing exactly ONE plan of the Cubic MVP:
 `.agents/plans/plan-02-gateway-policy.md`
-You are already on branch `plan-02` in this worktree. Do not switch plans, do not implement other plans' scope, do not touch main.
+You are already on branch `plan-02` in your assigned working directory. Do not switch plans, do not implement other plans' scope, do not touch main.
 
 READ FIRST, in this order:
 1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it)

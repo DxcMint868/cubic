@@ -2,7 +2,7 @@
 
 You are implementing exactly ONE plan of the Cubic MVP:
 `.agents/plans/plan-08-network-events.md`
-You are already on branch `plan-08` in this worktree. Do not switch plans, do not implement other plans' scope, do not touch main. A sibling agent is simultaneously implementing plan-03 (capabilities) on its own branch — stay in your fence and you will not collide.
+You are already on branch `plan-08` in your assigned working directory. Do not switch plans, do not implement other plans' scope, do not touch main. A sibling agent is simultaneously implementing plan-03 (capabilities) on its own branch — stay in your fence and you will not collide.
 
 READ FIRST, in this order:
 1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it)
