@@ -23,6 +23,8 @@ Update this section as implementation progresses.
 Status as of 2026-09-10: the marketing/landing site (header, hero, manifesto, team section, footer) is built and iterated to user satisfaction. All items below are platform work that has NOT started — no gateway, no integrations, no real telemetry yet (hero/landing stats are mock per PROJECT.md §10).
 
 - [x] Bootstrap planning complete — 11 plan files in `.agents/plans/` (see Recent Changes). Execution not started.
+- [x] Orchestration set up: `.agents/dispatch/` contains `RUNBOOK.md` + verbatim dispatch prompts plan-01…plan-10 (fences, git discipline, test-tenant rules, done criteria). Waves: W1 01 solo → W2 02 solo → W3 03∥08 → W4 04∥07 → W5 05∥06 → W6 09 solo → W7 10 solo. Worktree per plan at `../cubic-pXX` (branch `plan-XX`), created by the orchestrator per wave; merge order within a wave = lower plan number first. Agents never edit MEMORY.md (merger folds their `## Spike findings` into it); plan-10 is the sole final-update exception.
+- [ ] **W1 pending launch**: worktree `../cubic-p01` created + installed; blocked on user adding `DATABASE_URL` to main `app/.env.local` (then orchestrator copies it in). Launch prompt: `.agents/dispatch/plan-01.md`.
 - [ ] Define the first end-to-end MVP implementation. (now covered by plan-00..plan-10)
 - [ ] Implement the authorization gateway and capability model.
 - [ ] Integrate MCP as the tool boundary.
