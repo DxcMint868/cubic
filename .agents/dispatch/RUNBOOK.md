@@ -7,9 +7,7 @@ Two roles:
 
 ## Where work happens
 
-**Solo waves (W1, W2, W6, W7): build right here.** The orchestrator creates branch `plan-XX` off latest `main`; you run the agent in this repo directory with the branch checked out. Merge to `main` when done.
-
-**Parallel waves (W3, W4, W5): two agents cannot share one working tree.** The orchestrator creates two temporary sibling worktrees (`../cubic-p03`, `../cubic-p08`, …) off latest `main`, runs `pnpm install` in each, copies `app/.env.local` into each (with `cp`, never reading it), and deletes them after merging.
+Every active plan gets its own directory — agents never run in the orchestrator's home repo. The orchestrator creates a sibling worktree per plan (`../cubic-p01`, `../cubic-p03`, …) off latest `main` on branch `plan-XX`, runs `pnpm install` in it, and copies `app/.env.local` into it (with `cp`, never reading it). Solo waves: one worktree. Parallel waves (W3, W4, W5): two worktrees. Worktrees are deleted after their wave merges. Home-repo `main` stays pristine — merges only.
 
 ## Wave map (strict order)
 
@@ -27,17 +25,17 @@ Hard rules: never launch a wave before the previous wave is fully merged; max 2 
 
 ## Per-wave loop
 
-1. Orchestrator preps: solo → `git checkout -b plan-XX main`; parallel → two worktrees as above.
-2. You launch the agent(s) in the assigned directory and paste `.agents/dispatch/plan-XX.md` verbatim.
-3. Each agent implements, ticks its ACs, commits to its branch, and ends with a final report. Solo-wave agents commit straight into their branch in this repo — never onto `main` directly.
+1. Orchestrator preps each worktree: `git worktree add ../cubic-pXX -b plan-XX main` (fresh off latest main), `pnpm install` at its root, copies `app/.env.local` from the home repo.
+2. You open each worktree dir (`../cubic-pXX`) in your agent tool and paste `.agents/dispatch/plan-XX.md` verbatim. One agent per worktree; launch a wave's two agents close together.
+3. Each agent implements, ticks its ACs, commits to its branch, and ends with a final report. Agents commit inside their own worktree — never onto `main` directly.
 4. You ping the orchestrator: `plan-XX done` (paste the final report if the agent isn't visible to the orchestrator).
 5. Orchestrator verifies in the branch (`pnpm typecheck && pnpm lint && pnpm test`), merges into `main` (parallel waves: lower plan number first, rebases the second if needed), folds spike findings into `MEMORY.md`, deletes temp worktrees, preps the next wave.
 
 ## One-time setup
 
 - [x] Plans + dispatch prompts committed to `main`.
-- [ ] **YOU**: create `app/.env.local` in THIS repo with `DATABASE_URL` (later also `HEDERA_*`, `AGENT0_SUBGRAPH_URL` as waves need them). Never paste these into chat, never commit them.
-- [ ] Orchestrator: `git checkout -b plan-01 main` → W1 launch is unblocked.
+- [x] `app/.env.local` in the home repo holds `DATABASE_URL` (later also `HEDERA_*`, `AGENT0_SUBGRAPH_URL` as waves need them — you add them there, orchestrator copies outward).
+- [x] W1 worktree `../cubic-p01` on branch `plan-01`: installed + env copied → launch is unblocked (see below).
 
 ## Secrets discipline
 
