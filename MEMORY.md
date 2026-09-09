@@ -19,6 +19,9 @@ This is the project's hot-memory layer: the actively maintained working fact sto
 Update this section as implementation progresses.
 
 ### Active Work
+
+Status as of 2026-09-10: the marketing/landing site (header, hero, manifesto, team section, footer) is built and iterated to user satisfaction. All items below are platform work that has NOT started — no gateway, no integrations, no real telemetry yet (hero/landing stats are mock per PROJECT.md §10).
+
 - [ ] Define the first end-to-end MVP implementation.
 - [ ] Implement the authorization gateway and capability model.
 - [ ] Integrate MCP as the tool boundary.
@@ -26,7 +29,7 @@ Update this section as implementation progresses.
 - [ ] Integrate Ledger Key Ring / Agent Stack path.
 - [ ] Integrate a live Hedera x402 payment flow.
 - [ ] Build tenant control-plane surfaces.
-- [ ] Build the global agent-network visualization.
+- [ ] Build the global agent-network visualization (the hero's NetworkCanvas is decorative ambience, not this surface).
 
 ### Decisions
 - Monorepo managed with **pnpm workspaces** (root `pnpm-workspace.yaml`).
@@ -53,6 +56,10 @@ Update this section as implementation progresses.
 - **MacWindow tab outline simplified** (user flagged as bug): the old flare/notch dipped 9px BELOW the title-bar separator and, with a black mask rect over the content, read as a dangling outlined "tag" hanging over the image. Removed NOTCH/TIP_Y/OUT, the flare path, and the mask rect — tab sides now run down to the separator with CONCAVE bottom corners (radius = CORNER, 9px) that flare outward and merge into the separator line (per user's "Prize" reference), which is broken under the active tab. Separator fill rects extend to L/R ∓ (CORNER-1) to stay continuous with the curve ends. SVG overlay is exactly BAR (44px) tall, no content overlap. Verified via playwright screenshots incl. tab switching.
 - **MacWindow: uniform tab widths** — all tabs share the widest tab's natural width (`tabW` state; buttons get `minWidth: tabW`, content centered; `tabW` in the layout-effect deps so the outline re-measures after enforcement). This makes the second tab as wide as `tron.jpeg` instead of hugging its shorter label.
 - **TeamSection: auto-rotate + crossfade** (user request): profile auto-switches every 7s (`ROTATE_MS`, interval starts once the section is visible via the existing IntersectionObserver; `activeTab` in the effect deps so a manual click resets the 7s clock). Both portraits now render stacked (absolute inset-0) inside a shared `aspectRatio: 1` container and crossfade via `opacity 0.6s ease` — no snap. Tab set is now `tron` + `min` (user added `app/public/dev_imgs/min.jpeg`; the old `duo.jpeg` naming is dead). Note: min's photo is very bright (white shirt) so the halftone dither reads washed-out vs tron's — flag to user if they dislike it.
+- **DitherImage gained a `brightness` prop** (default 1.05) — per-image tone knob; min uses 0.85, tron stays default.
+- **Manifesto: scroll-driven word reveal** (user request, replaced the static bright+dim two-tone text): new client component `app/src/components/Manifesto.tsx` splits the statement into word spans; a scroll listener (rAF-throttled, passive) computes progress `p` of the paragraph through the viewport (`(vh*0.85 - top) / (vh*0.45 + height)`, clamped 0..1) and interpolates each word's color `#3a3a3a → #f4f4f4` with an 8-word soft ramp (`t = clamp((p*(n+RAMP) - i)/RAMP)`). All words start grey, brighten top-to-bottom as the user scrolls. Note for verification: playwright element screenshots force the element fully into view, which clamps the scroll position — evaluate color values directly if precise mid-states must be checked.
+- **Team quote: back to plain static text** (user reversed course after trying decode-scramble — "we're doing too much"): the quote is a fixed `<p>` in `#e8e8e8`, single tone (no dim clause), no cursor, no text animation. LESSON: user prefers restraint — confirm appetite for flourish before adding text effects; the manifesto scroll-reveal stayed because it aids reading.
+- **Hero copy rebuilt** (user found the old hero underwhelming): new client component `app/src/components/HeroCopy.tsx` renders the whole left column — bigger wordmark (`clamp(88px,11vw,160px)`) and slogan, the old subline DELETED, replaced by "Your {model} can't escape the cube □" with the model name deleting letter-by-letter then typing the next one (`hold` 1100ms → `delete` 40ms/char → `type` 65ms/char, state machine in HeroCopy; user rejected both the instant swap AND a blinking cursor on the model name — keep the model span bare) through `MODELS` (Fable 5, GPT Astra, Grok 4.6, Gemini 3 Ultra, Llama 5, DeepSeek V4, Mistral 4, Qwen 3 Max — user-supplied fictional 2026 names, extend freely); the pipeline line `intent → policy → capability → execution` now TYPES out char-by-char (34ms/char, 600ms delay) with the blinking block cursor; below that a mock stats grid of FOUR stats on one line (user removed DENIED — "people can subtract that themselves": 1,842 agents online / 24,921 intents evaluated / 23,884 authorized / 123 escalated) with a `SIMULATED ACTIVITY — DEMO NETWORK` tag (PROJECT.md requires mock counters be clearly marked until real telemetry exists). Left column widened to 46%/min 440px.
 
 ### Important Constraints
 - Authorization decisions must be deterministic; LLMs may classify/summarize but must not be the final ALLOW/DENY oracle.

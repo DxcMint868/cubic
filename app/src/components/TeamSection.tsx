@@ -100,13 +100,10 @@ export default function TeamSection() {
         }}
       >
         From the former Web3 engineers behind centralized-exchange
-        infrastructure — systems where one leaked key is a lost company — and
-        the author of an ERC-8004 research publication on onchain agent
-        identity.{" "}
-        <span style={{ color: "#5a5a5a" }}>
-          We spent years guarding the keys. Now we&apos;re building the layer
-          that means agents never hold them.
-        </span>
+        infrastructure — systems where one leaked key is a lost company — with
+        research published on ERC-8004 and onchain agent identity. We spent
+        years guarding the keys. Now we&apos;re building the layer that means
+        agents never hold them.
       </p>
     </section>
   );

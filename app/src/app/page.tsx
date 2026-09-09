@@ -1,8 +1,8 @@
+import HeroCopy from "@/components/HeroCopy";
 import Logo from "@/components/Logo";
+import Manifesto from "@/components/Manifesto";
 import NetworkCanvas from "@/components/NetworkCanvas";
 import TeamSection from "@/components/TeamSection";
-
-const mono = 'ui-monospace, "SF Mono", Menlo, monospace';
 
 const headerNav = ["PRODUCT", "NETWORK", "DOCS"];
 const footerLinks = ["GITHUB", "DOCS", "CONTACT"];
@@ -71,8 +71,8 @@ export default function Home() {
       >
         <section
           style={{
-            width: "44%",
-            minWidth: 420,
+            width: "46%",
+            minWidth: 440,
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
@@ -82,57 +82,7 @@ export default function Home() {
             zIndex: 1,
           }}
         >
-          <h1 style={{ margin: 0 }}>
-            <Logo fontSize="clamp(72px, 9vw, 128px)" />
-          </h1>
-
-          <p
-            style={{
-              marginTop: 26,
-              fontSize: 20,
-              fontWeight: 500,
-              letterSpacing: "-0.01em",
-              color: "#e0e0e0",
-            }}
-          >
-            Cloudflare for agent actions.
-          </p>
-
-          <p
-            style={{
-              marginTop: 12,
-              fontSize: 15,
-              lineHeight: 1.6,
-              color: "#8a8a8a",
-              maxWidth: 440,
-            }}
-          >
-            Every agent tool call checked against identity, intent, policy, and
-            trust.
-          </p>
-
-          <p
-            className="mono"
-            style={{
-              marginTop: 30,
-              fontSize: 12,
-              letterSpacing: "0.12em",
-              color: "#5a5a5a",
-            }}
-          >
-            intent → policy → capability → execution
-            <span
-              style={{
-                display: "inline-block",
-                width: 8,
-                height: 12,
-                marginLeft: 8,
-                background: "#5a5a5a",
-                verticalAlign: "middle",
-                animation: "blink 1.2s steps(1) infinite",
-              }}
-            />
-          </p>
+          <HeroCopy />
         </section>
 
         <div
@@ -157,27 +107,7 @@ export default function Home() {
           borderTop: "1px solid rgba(255,255,255,0.07)",
         }}
       >
-        <p
-          style={{
-            maxWidth: 1080,
-            fontSize: "clamp(26px, 3.2vw, 46px)",
-            fontWeight: 700,
-            letterSpacing: "-0.02em",
-            lineHeight: 1.28,
-            color: "#f4f4f4",
-          }}
-        >
-          AI agents are gaining access to everything — codebases,
-          infrastructure, money — with credentials they can leak and authority
-          they were never meant to hold. Cubic sits between agents and their
-          tools. Every tool call becomes an intent, evaluated against
-          identity, policy, and live trust context — then allowed, denied, or
-          escalated. Agents receive scoped, expiring capabilities, never raw
-          keys.{" "}
-          <span style={{ color: "#5a5a5a" }}>
-            We authorize. Existing tools execute. Every decision is recorded.
-          </span>
-        </p>
+        <Manifesto />
       </section>
 
       <TeamSection />
