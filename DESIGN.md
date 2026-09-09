@@ -29,6 +29,13 @@ Agent -> Intent -> Policy/Context Evaluation -> Allow | Deny | Escalate -> Capab
 - Risk states must be immediately distinguishable and consistently represented.
 - Destructive/high-risk actions should expose the reason for escalation and the approval state.
 
+## UI Conventions
+
+- Monochrome only: black surfaces, white/gray type, outlined squares as the recurring motif. No color accents.
+- Wordmark: "Cubic" in Darker Grotesque 800 with an outlined square as the period.
+- Floating panels, dialogs, and content surfaces use macOS-application-style chrome: a rounded rectangle (10px radius) with a 44px title bar — three plain circles on the right (two outlined, one filled, no glyphs) and optional browser-style tabs on the left — implemented in `app/src/components/MacWindow.tsx` (tabs API: `tabs` / `activeTab` / `onTabChange`). Reuse that component rather than recreating window chrome.
+- Mono font (`ui-monospace` stack, see `.mono` in globals.css) for labels, metadata, and technical text; Darker Grotesque for display and body.
+
 ## Alignment Rule
 
 When a proposed implementation conflicts with this document, stop and reconcile the design before proceeding. Update this document only when the project intentionally changes its canonical design language.
