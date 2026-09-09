@@ -26,6 +26,12 @@ ENV: `app/.env.local` already contains `DATABASE_URL`. Never print, log, or comm
 
 TEST DISCIPLINE: integration tests create their own throwaway tenant (slug `test-plan-08`). Never mutate the demo tenant.
 
+SELF-REVIEW (mandatory — you run your own council; this is not optional):
+
+a. DURING the work — after each major step, not just at the end — spawn a council of 2 subagents on that step's diff: one Explorer-type (trace how the new code is/will be consumed — imports, callers, schema consumers, event shapes vs the plan-00 contracts) and one General-type, adversarial (prove the step wrong — hunt contradictions with your plan, missing literals, anything a literal executor would have to invent). Give both the plan file + the diff so far. Read both reports; fix every valid finding or rebut it in writing in your final report. (opencode: subagent_type `explore` + `general`.)
+b. WHEN FINISHED — BEFORE reporting done — spawn the `contract-reviewer` subagent (repo profile `.opencode/agents/contract-reviewer.md`, invoke by name) on your branch as the final gate. If it returns BLOCK: fix every item (re-consult your council as needed) and re-run the gate until MERGE. Attach the gate verdict + a council-findings summary to your final report. Only then tick your last AC, commit, and report done.
+c. If your harness cannot spawn subagents: do both reviews inline (write the for/against as working notes), execute the contract-reviewer checklist from its file manually, and state plainly in your final report that review was inline, not spawned. "No subagents" is never an excuse to skip review.
+
 DEFINITION OF DONE:
 - Every AC in your plan ticked.
 - `pnpm typecheck && pnpm lint && pnpm test` green from repo root.
