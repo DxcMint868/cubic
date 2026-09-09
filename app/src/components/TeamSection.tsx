@@ -6,11 +6,13 @@ import DitherImage from "@/components/DitherImage";
 
 const tabs = [
   { id: "tron", label: "tron.jpeg" },
-  { id: "duo", label: "duo.jpeg" },
+  { id: "min", label: "min.jpeg" },
 ];
 
+const ROTATE_MS = 7000;
+
 export default function TeamSection() {
-  const [activeTab, setActiveTab] = useState("tron");
+  const [activeTab, setActiveTab] = useState(tabs[0].id);
   const [visible, setVisible] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -30,6 +32,17 @@ export default function TeamSection() {
     return () => io.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!visible) return;
+    const id = setInterval(() => {
+      setActiveTab((cur) => {
+        const i = tabs.findIndex((t) => t.id === cur);
+        return tabs[(i + 1) % tabs.length].id;
+      });
+    }, ROTATE_MS);
+    return () => clearInterval(id);
+  }, [visible, activeTab]);
+
   return (
     <section
       id="team"
@@ -44,7 +57,6 @@ export default function TeamSection() {
       }}
     >
       <div
-        ref={ref}
         style={{
           transform: visible ? "none" : "translateX(-90px) scale(0.78)",
           opacity: visible ? 1 : 0,
@@ -54,16 +66,26 @@ export default function TeamSection() {
         }}
       >
         <MacWindow tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab}>
-          <DitherImage
-            src={
-              activeTab === "tron"
-                ? "/dev_imgs/tron.jpeg"
-                : "/dev_imgs/duo.jpeg"
-            }
-            alt="Founder"
-            label={activeTab === "tron" ? "TRON — 1:1" : "DUO — 1:1"}
-            style={{ border: "none", aspectRatio: "1" }}
-          />
+          <div style={{ position: "relative", aspectRatio: "1" }}>
+            {tabs.map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  opacity: activeTab === t.id ? 1 : 0,
+                  transition: "opacity 0.6s ease",
+                }}
+              >
+                <DitherImage
+                  src={`/dev_imgs/${t.id}.jpeg`}
+                  alt={t.label}
+                  label={`${t.id.toUpperCase()} — 1:1`}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                />
+              </div>
+            ))}
+          </div>
         </MacWindow>
       </div>
 
