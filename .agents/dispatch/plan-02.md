@@ -15,6 +15,7 @@ FILE FENCE — you own ONLY:
 - `app/src/server/gateway/**` (ingest, normalize, orchestrator, policy/engine, context/provider, approval/provider)
 - `app/src/app/api/gateway/tool-call/**`, `app/src/app/api/audit/**`
 - the policy-rule payloads inside `app/src/server/demo/seed.ts` (nothing else in that file — you finalize the rule-document shape that plan-01 stubbed)
+- `app/src/server/config.ts`: you may append `DEMO_TENANT_SLUG` ONLY (plan-02 step 1); nothing else in that file
 
 Shared-file rules:
 - `app/src/server/db/schema.ts` is complete from plan-01. Never modify it.

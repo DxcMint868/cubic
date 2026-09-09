@@ -10,333 +10,137 @@ depends-on: [plan-00-architecture]
 
 ## Objective
 
-Persistence core for every later plan: env config, full Postgres schema, canonical append-only event bus, seedable demo tenant, health endpoint, test runner.
+Persistence core for every later plan: env config (loaded in EVERY runtime, not just Next), full Postgres schema, canonical append-only event bus, seedable demo tenant, health endpoint, test runner.
 
 ## Preconditions
 
-- `plan-00-architecture.md` read (§E table list, §F event payloads, §B.1 shared types — you create `domain.ts` here).
+- `plan-00-architecture.md` read (§B.1 domain types, §E table list, §F event payloads).
 - `DATABASE_URL` in `app/.env.local` (user-provided). Confirm `.env*` git-ignored.
 
 ## Steps
 
-1. **Deps** (`app/package.json`): `drizzle-orm@^0.44`, `postgres@^3.4`, `zod@^3.25`; dev: `drizzle-kit@^0.31`, `vitest@^3.2`, `tsx@^4.19`. If a pinned version fails to install, take the latest stable of the same major and note it.
+1. **Deps** (`app/package.json`): `drizzle-orm@^0.44`, `postgres@^3.4`, `zod@^3.25`, `dotenv@^16.4`; dev: `drizzle-kit@^0.31`, `vitest@^3.2`, `tsx@^4.19`. If a pinned version fails to install, take the latest stable of the same major and note it in your report.
 
-2. **EXACT — `app/src/server/domain.ts`**: copy plan-00 §B.1 verbatim (types + `ReasonCode` + API error codes as a `const apiErrorCodes = [...] as const` array).
-
-3. **EXACT — `app/src/server/config.ts`:**
+2. **EXACT — `app/src/server/domain.ts`**: copy plan-00 §B.1 verbatim (all types + `ReasonCode` + this error-code block):
 
 ```ts
-import { z } from "zod";
+export const apiErrorCodes = [
+  "AGENT_NOT_FOUND", "TASK_NOT_FOUND", "TOOL_NOT_FOUND", "INVALID_REQUEST",
+  "CAPABILITY_REJECTED", "PAYMENT_REQUIRED", "INTERNAL",
+] as const;
+export type ApiErrorCode = (typeof apiErrorCodes)[number];
+```
 
-const schema = z.object({
-  DATABASE_URL: z.string().min(1),
-  LEDGER_PROVIDER: z.enum(["dev", "ledger"]).default("dev"),
-  HEDERA_NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
-  X402_SCANNER_PRICE_CENTS: z.coerce.number().int().default(25),
-  X402_DEV_BYPASS: z.enum(["0", "1"]).default("0"),
-  X402_SIMULATE_FAILURE: z.enum(["0", "1"]).default("0"),
-  AGENT0_SUBGRAPH_URL: z.string().min(1).optional(),
-  LLM_INTENT_PROVIDER: z.string().min(1).optional(),
-  GITHUB_TOKEN: z.string().min(1).optional(),
-  LEDGER_WALLET_CLI_PATH: z.string().min(1).optional(),
-  HEDERA_OPERATOR_ID: z.string().min(1).optional(),
-  HEDERA_OPERATOR_KEY: z.string().min(1).optional(),
-});
+3. **EXACT — `app/src/server/load-env.ts`** (new; fixes the "env missing outside Next" trap):
 
-export type Config = z.infer<typeof schema>;
+```ts
+// MUST be the first import in every non-Next entrypoint (config.ts, drizzle.config.ts,
+// vitest setup, tsx scripts). Next.js loads app/.env.local itself; nothing else does.
+import { config as loadEnvFile } from "dotenv";
+import { resolve } from "node:path";
+
+loadEnvFile({ path: resolve(process.cwd(), ".env.local") });
+```
+
+   Root scripts run via `pnpm --filter app …`, which sets cwd to `app/` — so `resolve(process.cwd(), ".env.local")` finds `app/.env.local` in every case.
+
+4. **EXACT — `app/src/server/config.ts`**: first line `import "./load-env";`, then the zod schema from the previous version of this plan (required `DATABASE_URL`; `LEDGER_PROVIDER`, `HEDERA_NETWORK`, `X402_SCANNER_PRICE_CENTS`, `X402_DEV_BYPASS`, `X402_SIMULATE_FAILURE` with defaults; optional `AGENT0_SUBGRAPH_URL`, `LLM_INTENT_PROVIDER`, `GITHUB_TOKEN`, `LEDGER_WALLET_CLI_PATH`, `HEDERA_OPERATOR_ID`, `HEDERA_OPERATOR_KEY`), fail-fast `config()` singleton cached on `globalThis.__cubicConfig` throwing `Invalid environment: <path>: <message>; …` on failure.
+
+5. **EXACT — `app/src/server/db/schema.ts`**: the full 13-table schema from the previous version of this plan, PLUS this column on `decisions` (review fix — `matched_rule_id` must be queryable for the trace UI):
+
+```ts
+matchedRuleId: text("matched_rule_id").notNull(),
+```
+
+   placed directly after `matchedPolicy`. Everything else in the schema is unchanged. This is the single permitted post-freeze schema addition; after this plan merges, `schema.ts` is frozen (later plans may not touch it).
+
+6. **EXACT — `app/src/server/db/client.ts`:**
+
+```ts
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import { config } from "../config";
+import * as schema from "./schema";
 
 declare global {
   // eslint-disable-next-line no-var
-  var __cubicConfig: Config | undefined;
+  var __cubicDb: ReturnType<typeof makeDb> | undefined;
 }
 
-export function config(): Config {
-  if (!globalThis.__cubicConfig) {
-    const parsed = schema.safeParse(process.env);
-    if (!parsed.success) {
-      throw new Error(
-        `Invalid environment: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
-      );
-    }
-    globalThis.__cubicConfig = parsed.data;
-  }
-  return globalThis.__cubicConfig;
+function makeDb() {
+  const client = postgres(config().DATABASE_URL, { max: 5 });
+  return drizzle(client, { schema });
+}
+
+export function db() {
+  if (!globalThis.__cubicDb) globalThis.__cubicDb = makeDb();
+  return globalThis.__cubicDb;
 }
 ```
 
-4. **EXACT — `app/src/server/db/schema.ts`** (all 13 tables; column names/types/checks/indexes exactly this):
+7. **Migrations**: `app/drizzle.config.ts` — first line `import "./src/server/load-env";`, then `dialect: "postgresql"`, `schema: "./src/server/db/schema.ts"`, `out: "./drizzle"`, `dbCredentials: { url: config().DATABASE_URL }`. Scripts: `db:generate` → `drizzle-kit generate`, `db:migrate` → `drizzle-kit migrate`, `db:studio` → `drizzle-kit studio`.
+
+8. **EXACT — `app/src/server/events/types.ts`**: the 17-entry zod schema map from the previous version of this plan (fields exactly per plan-00 §F), with these two fixes:
+   - define `const _eventTypes = [ …17 strings… ] as const; export type EventType = (typeof _eventTypes)[number]; export const eventTypes: [EventType, ...EventType[]] = [..._eventTypes];` then `z.enum(eventTypes)` (a bare `as const` tuple breaks `z.enum`'s `[string, ...string[]]` parameter).
+   - `emitInput` / `EventEnvelope` as before (`payload: z.record(z.string(), z.unknown())`).
+
+9. **EXACT — `app/src/server/events/bus.ts`**:
 
 ```ts
-import { sql } from "drizzle-orm";
-import {
-  pgTable, uuid, text, integer, jsonb, timestamp, bigserial,
-  check, index, uniqueIndex,
-} from "drizzle-orm/pg-core";
-import type { Reason, NormalizedIntent } from "../domain";
+import { randomUUID as uuid } from "node:crypto";
+import { db } from "../db/client";
+import { auditEvents } from "../db/schema";
+import { emitInput, payloadSchemas, type EmitInput, type EventEnvelope } from "./types";
+import type { RiskClass } from "../domain";
 
-const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "string" });
+// Meta is best-effort context for the plan-08 projection. Audit row is unaffected.
+export interface ProjectionMeta {
+  agent_key?: string;
+  category?: string;
+  risk_class?: RiskClass;
+}
 
-export const tenants = pgTable("tenants", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  slug: text("slug").notNull(),
-  name: text("name").notNull(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [uniqueIndex("tenants_slug_key").on(t.slug)]);
-
-export const agents = pgTable("agents", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
-  agentKey: text("agent_key").notNull(),
-  erc8004Identity: text("erc8004_identity"),
-  name: text("name").notNull(),
-  environment: text("environment").notNull().default("demo"),
-  status: text("status").notNull().default("active"),
-  declaredCapabilities: jsonb("declared_capabilities").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [
-  uniqueIndex("agents_tenant_key").on(t.tenantId, t.agentKey),
-  check("agents_status_check", sql`${t.status} in ('active','suspended')`),
-]);
-
-export const tools = pgTable("tools", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
-  name: text("name").notNull(),
-  category: text("category").notNull(),
-  defaultRiskClass: text("default_risk_class").notNull(),
-  executor: text("executor").notNull(),
-  executorConfig: jsonb("executor_config").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [
-  uniqueIndex("tools_tenant_name").on(t.tenantId, t.name),
-  check("tools_risk_check", sql`${t.defaultRiskClass} in ('low','medium','high','critical')`),
-]);
-
-export const policies = pgTable("policies", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
-  name: text("name").notNull(),
-  version: integer("version").notNull().default(1),
-  rules: jsonb("rules").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [uniqueIndex("policies_tenant_name_version").on(t.tenantId, t.name, t.version)]);
-
-export const tasks = pgTable("tasks", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
-  agentId: uuid("agent_id").notNull().references(() => agents.id),
-  title: text("title").notNull(),
-  budgetUsdCents: integer("budget_usd_cents"),
-  status: text("status").notNull().default("open"),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [check("tasks_status_check", sql`${t.status} in ('open','completed','failed')`)]);
-
-export const intents = pgTable("intents", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  taskId: uuid("task_id").references(() => tasks.id),
-  agentId: uuid("agent_id").notNull().references(() => agents.id),
-  tool: text("tool").notNull(),
-  resource: text("resource"),
-  argumentsRedacted: jsonb("arguments_redacted").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-  riskClass: text("risk_class").notNull(),
-  origin: text("origin").notNull().default("agent"),
-  normalized: jsonb("normalized").$type<NormalizedIntent | null>(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [
-  index("intents_task_idx").on(t.taskId, t.createdAt),
-  check("intents_risk_check", sql`${t.riskClass} in ('low','medium','high','critical')`),
-]);
-
-export const decisions = pgTable("decisions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  intentId: uuid("intent_id").notNull().references(() => intents.id),
-  decision: text("decision").notNull(),
-  matchedPolicy: text("matched_policy").notNull(),
-  reasons: jsonb("reasons").$type<Reason[]>().notNull().default(sql`'[]'::jsonb`),
-  contextSnapshotHash: text("context_snapshot_hash").notNull(),
-  riskScore: integer("risk_score").notNull(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [check("decisions_decision_check", sql`${t.decision} in ('allow','deny','escalate')`)]);
-
-export const capabilities = pgTable("capabilities", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  decisionId: uuid("decision_id").notNull().references(() => decisions.id),
-  subject: text("subject").notNull(),
-  action: text("action").notNull(),
-  resource: text("resource").notNull(),
-  constraints: jsonb("constraints").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
-  budgetUsdCents: integer("budget_usd_cents"),
-  expiresAt: ts("expires_at").notNull(),
-  nonce: text("nonce").notNull(),
-  policyHash: text("policy_hash").notNull(),
-  status: text("status").notNull().default("issued"),
-  issuedAt: ts("issued_at").notNull().defaultNow(),
-  consumedAt: ts("consumed_at"),
-}, (t) => [
-  uniqueIndex("capabilities_nonce_key").on(t.nonce),
-  check("capabilities_status_check", sql`${t.status} in ('issued','consumed','expired','revoked')`),
-]);
-
-export const approvals = pgTable("approvals", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  decisionId: uuid("decision_id").notNull().references(() => decisions.id),
-  type: text("type").notNull(),
-  status: text("status").notNull().default("pending"),
-  provider: text("provider").notNull(),
-  providerRef: text("provider_ref"),
-  requestedAt: ts("requested_at").notNull().defaultNow(),
-  completedAt: ts("completed_at"),
-}, (t) => [
-  check("approvals_type_check", sql`${t.type} in ('ledger','human')`),
-  check("approvals_status_check", sql`${t.status} in ('pending','approved','rejected')`),
-]);
-
-export const executions = pgTable("executions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  capabilityId: uuid("capability_id").notNull().references(() => capabilities.id),
-  tool: text("tool").notNull(),
-  status: text("status").notNull().default("running"),
-  executor: text("executor").notNull(),
-  resultSummary: text("result_summary"),
-  error: text("error"),
-  startedAt: ts("started_at").notNull().defaultNow(),
-  completedAt: ts("completed_at"),
-}, (t) => [check("executions_status_check", sql`${t.status} in ('running','succeeded','failed')`)]);
-
-export const payments = pgTable("payments", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  capabilityId: uuid("capability_id").notNull().references(() => capabilities.id),
-  service: text("service").notNull(),
-  network: text("network").notNull(),
-  amountUsdCents: integer("amount_usd_cents").notNull(),
-  status: text("status").notNull().default("requested"),
-  x402Ref: text("x402_ref"),
-  createdAt: ts("created_at").notNull().defaultNow(),
-  settledAt: ts("settled_at"),
-}, (t) => [check("payments_status_check", sql`${t.status} in ('requested','completed','failed')`)]);
-
-export const auditEvents = pgTable("audit_events", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
-  tenantId: uuid("tenant_id").references(() => tenants.id),
-  taskId: uuid("task_id").references(() => tasks.id),
-  agentId: uuid("agent_id").references(() => agents.id),
-  eventType: text("event_type").notNull(),
-  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [index("audit_events_task_idx").on(t.taskId, t.createdAt)]);
-
-export const networkEvents = pgTable("network_events", {
-  id: bigserial("id", { mode: "number" }).primaryKey(),
-  eventType: text("event_type").notNull(),
-  agentPseudonym: text("agent_pseudonym").notNull(),
-  agentCategory: text("agent_category").notNull(),
-  actionClass: text("action_class").notNull(),
-  outcome: text("outcome").notNull(),
-  riskClass: text("risk_class").notNull(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-}, (t) => [index("network_events_created_idx").on(t.createdAt)]);
-```
-
-5. **`app/src/server/db/client.ts`**: postgres.js `sql` singleton + `drizzle(sql)`, cached on `globalThis.__cubicDb` (same pattern as config).
-
-6. **Migrations**: `app/drizzle.config.ts` → `dialect: "postgresql"`, `schema: "./src/server/db/schema.ts"`, `out: "./drizzle"`, `dbCredentials: { url: config().DATABASE_URL }`. Scripts: `db:generate` → `drizzle-kit generate`, `db:migrate` → `drizzle-kit migrate`, `db:studio` → `drizzle-kit studio`.
-
-7. **EXACT — `app/src/server/events/types.ts`**: one zod object per event type, fields exactly per plan-00 §F table. Skeleton:
-
-```ts
-import { z } from "zod";
-
-export const eventTypes = [
-  "intent.created", "policy.evaluated", "capability.issued", "capability.denied",
-  "capability.escalated", "capability.consumed", "capability.rejected",
-  "ledger.approval.requested", "ledger.approval.completed",
-  "payment.requested", "payment.completed", "payment.failed", "service.discovered",
-  "tool.execution.started", "tool.execution.completed", "tool.execution.failed",
-  "task.completed",
-] as const;
-export type EventType = (typeof eventTypes)[number];
-
-const uuid = z.string().uuid();
-const risk = z.enum(["low", "medium", "high", "critical"]);
-const dec = z.enum(["allow", "deny", "escalate"]);
-
-export const payloadSchemas: Record<EventType, z.ZodTypeAny> = {
-  "intent.created": z.object({ intent_id: uuid, tool: z.string(), resource: z.string().nullable().default(null), risk_class: risk, origin: z.enum(["agent", "payment_discovery"]) }),
-  "policy.evaluated": z.object({ intent_id: uuid, decision_id: uuid, decision: dec, matched_policy: z.string(), matched_rule_id: z.string(), reason_codes: z.array(z.string()), risk_score: z.number().int() }),
-  "capability.issued": z.object({ capability_id: uuid, decision_id: uuid, subject: z.string(), action: z.string(), resource: z.string(), budget_usd_cents: z.number().int().nullable(), expires_at: z.string(), nonce: z.string().length(64), policy_hash: z.string() }),
-  "capability.denied": z.object({ intent_id: uuid, decision_id: uuid, reason_codes: z.array(z.string()) }),
-  "capability.escalated": z.object({ intent_id: uuid, decision_id: uuid, approval_id: uuid, reason_codes: z.array(z.string()) }),
-  "capability.consumed": z.object({ capability_id: uuid, execution_id: uuid.nullable() }),
-  "capability.rejected": z.object({ capability_id: uuid.nullable(), reason: z.enum(["not_found", "replay", "expired", "action_mismatch", "resource_mismatch", "budget_exceeded"]), requested_action: z.string().nullable(), requested_resource: z.string().nullable() }),
-  "ledger.approval.requested": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), action: z.string(), resource: z.string() }),
-  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]) }),
-  "payment.requested": z.object({ payment_id: uuid, capability_id: uuid, service: z.string(), network: z.literal("hedera"), amount_usd_cents: z.number().int() }),
-  "payment.completed": z.object({ payment_id: uuid, capability_id: uuid, settlement_ref: z.string() }),
-  "payment.failed": z.object({ payment_id: uuid, capability_id: uuid, error_code: z.string() }),
-  "service.discovered": z.object({ intent_id: uuid, service: z.string(), price_usd_cents: z.number().int(), challenge_ref: z.string() }),
-  "tool.execution.started": z.object({ execution_id: uuid, capability_id: uuid, tool: z.string(), resource: z.string() }),
-  "tool.execution.completed": z.object({ execution_id: uuid, capability_id: uuid, result_summary: z.string() }),
-  "tool.execution.failed": z.object({ execution_id: uuid, capability_id: uuid, error_code: z.string() }),
-  "task.completed": z.object({ task_id: uuid, status: z.enum(["completed", "failed"]), summary: z.string().nullable() }),
-};
-
-export const emitInput = z.object({
-  event_type: z.enum(eventTypes),
-  tenant_id: uuid,
-  task_id: uuid.nullable().default(null),
-  agent_id: uuid.nullable().default(null),
-  payload: z.record(z.string(), z.unknown()),
-});
-export type EmitInput = z.infer<typeof emitInput>;
-export type EventEnvelope = EmitInput & { event_id: string; occurred_at: string };
-```
-
-8. **`app/src/server/events/bus.ts`**: `emit(input: EmitInput): Promise<EventEnvelope>` — validate `input.payload` against `payloadSchemas[input.event_type]` (throw `Error("invalid payload for " + event_type)` on failure — no row written), insert into `audit_events` with a fresh `uuid()` as payload-independent envelope id (return `{...input, event_id, occurred_at: new Date().toISOString()}`). Append-only: no update/delete functions in this file, ever.
-
-9. **EXACT — seed fixture** (`app/src/server/demo/seed.ts`, route `POST /api/demo/seed`):
-
-```json
-{
-  "tenant": { "slug": "demo", "name": "Cubic Demo" },
-  "agents": [{
-    "agent_key": "agent:8472", "name": "deploy-agent", "environment": "demo",
-    "status": "active", "erc8004_identity": null,
-    "declared_capabilities": ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"]
-  }],
-  "tools": [
-    { "name": "github.get_pull_request", "category": "coding", "default_risk_class": "low", "executor": "github", "executor_config": {} },
-    { "name": "github.read_file", "category": "coding", "default_risk_class": "low", "executor": "github", "executor_config": {} },
-    { "name": "github.merge_pull_request", "category": "coding", "default_risk_class": "high", "executor": "github", "executor_config": {} },
-    { "name": "deploy.production", "category": "deploy", "default_risk_class": "critical", "executor": "github", "executor_config": {} },
-    { "name": "scanner.scan", "category": "security", "default_risk_class": "medium", "executor": "scanner", "executor_config": { "endpoint": "http://localhost:3000/api/services/scanner/scan" } },
-    { "name": "task.complete", "category": "control", "default_risk_class": "low", "executor": "task", "executor_config": {} }
-  ],
-  "policies": [
-    { "name": "default-v1", "version": 1, "rules": [{ "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }] },
-    { "name": "payment-v1", "version": 1, "rules": [{ "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }] },
-    { "name": "production-merge-v1", "version": 1, "rules": [{ "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }] }
-  ],
-  "tasks": [{
-    "agent_key": "agent:8472",
-    "title": "Review and deploy PR #421 in acme/backend; purchase a security scan if permitted (budget $0.50)",
-    "budget_usd_cents": 50, "status": "open"
-  }]
+export async function emit(input: EmitInput, meta: ProjectionMeta = {}): Promise<EventEnvelope> {
+  const parsed = emitInput.safeParse(input);
+  if (!parsed.success) throw new Error(`invalid event envelope: ${parsed.error.message}`);
+  const payloadCheck = payloadSchemas[parsed.data.event_type].safeParse(parsed.data.payload);
+  if (!payloadCheck.success) throw new Error(`invalid payload for ${parsed.data.event_type}: ${payloadCheck.error.message}`);
+  const envelope: EventEnvelope = {
+    ...parsed.data,
+    event_id: uuid(),
+    occurred_at: new Date().toISOString(),
+  };
+  await db().insert(auditEvents).values({
+    tenantId: envelope.tenant_id,
+    taskId: envelope.task_id,
+    agentId: envelope.agent_id,
+    eventType: envelope.event_type,
+    payload: envelope.payload,
+  });
+  void meta; // plan-08 wires the projection here; today it is accepted and ignored.
+  return envelope;
 }
 ```
 
-**Seed algorithm (EXACT):** delete rows belonging to the demo tenant only — `DELETE FROM audit_events WHERE tenant_id = (demo tenant id)`, same for every other table by that tenant id (children first: audit_events, network_events is global → DELETE FROM network_events WHERE agent_pseudonym derived from demo agents — if that is hard, delete all network_events rows and note it; they are regenerable) — then upsert fixture. **Never** TRUNCATE global tables. Idempotent: running twice leaves identical row counts.
+   Append-only: no update/delete functions in this file, ever.
 
-10. **`app/src/app/api/health/route.ts`**: `SELECT 1` via the db client → `{ ok: true, data: { db: "up", version: "0.1.0" } }`; on failure `{ ok: false, error: { code: "INTERNAL", message } }` with 503.
+10. **EXACT — seed** (`app/src/server/demo/seed.ts`, route `POST /api/demo/seed`): fixture JSON identical to the previous version of this plan (demo tenant, `agent:8472`, 6 tools, 3 stub policies, budget-50 task). Three fixes:
+    - Resolve the tenant first, literally: `const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, "demo")); if (!tenant) throw new Error("seed: demo tenant missing");` then scope every delete/insert by `tenant.id`.
+    - Map fixture snake_case keys to drizzle camelCase props **explicitly field-by-field** (`agent_key` → `agentKey`, `budget_usd_cents` → `budgetUsdCents`, `erc8004_identity` → `erc8004Identity`, `declared_capabilities` → `declaredCapabilities`, `default_risk_class` → `defaultRiskClass`, `executor_config` → `executorConfig`). No generic case converter.
+    - `network_events` scoping: compute demo pseudonyms in seed — `sha256(agent_key + "|cubic-network-v1").hexdigest.slice(0, 16)` for each demo agent — and delete only rows with those pseudonyms. Never touch other rows; never TRUNCATE.
+    - Idempotent: running twice leaves identical demo-tenant row counts.
 
-11. **Test runner**: `app/vitest.config.ts` (environment `node`, include `src/**/*.test.ts`, `tests/**/*.test.ts`); root `package.json` gains `"test": "pnpm --filter app test"`.
+11. **`app/src/app/api/health/route.ts`**: `SELECT 1` via the db client → `{ ok: true, data: { db: "up", version: "0.1.0" } }`; on failure `{ ok: false, error: { code: "INTERNAL", message } }` with 503.
+
+12. **Test runner**: `app/vitest.config.ts` (environment `node`, include `src/**/*.test.ts` + `tests/**/*.test.ts`, `setupFiles: ["./src/server/load-env.ts"]`); root `package.json` gains `"test": "pnpm --filter app test"`.
 
 ## Acceptance criteria
 
-- [ ] `pnpm --filter app db:generate` produces the initial migration; `pnpm --filter app db:migrate` applies cleanly.
-- [ ] `pnpm --filter app test` passes: (a) `config()` with missing `DATABASE_URL` throws a message containing `DATABASE_URL`; (b) for **all 17 event types**, `emit()` with a valid sample payload persists a row and the returned envelope validates against `emitInput`; (c) `emit()` with an invalid payload throws AND writes no row; (d) seed run twice → identical demo-tenant row counts, and a pre-created foreign tenant (`slug: "test-plan-01"`) with rows **survives** seeding.
-- [ ] `curl -s localhost:3000/api/health` → `{"ok":true,...}`; `curl -s -X POST localhost:3000/api/demo/seed` → `{"ok":true,...}` with `pnpm dev` running.
+- [ ] `pnpm --filter app db:generate` produces the initial migration; `db:migrate` applies cleanly — run from a shell WITHOUT `DATABASE_URL` exported (proves `load-env.ts` works; the `.env.local` file is the only source).
+- [ ] `pnpm --filter app test` passes: (a) `config()` with missing `DATABASE_URL` throws containing `DATABASE_URL`; (b) for **all 17 event types**, `emit()` with a valid sample payload persists a row and the envelope validates; (c) invalid payload throws AND writes no row; (d) seed twice → identical demo-tenant counts, and a pre-created foreign tenant (`slug: "test-plan-01"`) with rows **survives**; (e) deleting demo `network_events` by pseudonym leaves a foreign-pseudonym row intact.
+- [ ] With `pnpm dev` running (no env exported in that shell either): `curl -s localhost:3000/api/health` → `{"ok":true,…}`; `curl -s -X POST localhost:3000/api/demo/seed` → `{"ok":true,…}`.
 - [ ] `pnpm typecheck && pnpm lint` green.
 
 ## Out of scope
 
-Gateway pipeline (plan-02), capabilities (plan-03), network projection (plan-08 owns `events/projection.ts`).
+Gateway pipeline (plan-02), capabilities (plan-03), network projection (plan-08 owns `events/projection.ts` — the `meta` param it will consume is already accepted here).

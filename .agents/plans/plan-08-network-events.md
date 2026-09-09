@@ -6,7 +6,7 @@ depends-on: [plan-01-foundation, plan-02-gateway-policy]
 
 # Plan 08 — Network events: privacy-minimized public projection + live stream
 
-**HOW TO USE:** **EXACT** blocks are verbatim contracts — copy them. Steps are ordered.
+**HOW TO USE:** **EXACT** blocks are verbatim contracts — copy them as written. Steps are ordered.
 
 ## Objective
 
@@ -18,7 +18,7 @@ plans 01–02 merged; plan-00 §F (payload fields + projection rules) read.
 
 ## Steps
 
-1. **EXACT — `events/projection.ts` mapping** (event_type → `action_class`, `outcome`). Only these event types project; anything else is skipped:
+1. **EXACT — `events/projection.ts`** mapping (event_type → `action_class`, `outcome`). Only these event types project; anything else is skipped:
 
 ```text
 intent.created             → action_class "intent",       outcome "created"
@@ -40,16 +40,20 @@ tool.execution.failed      → "execution",   outcome "failed"
 task.completed             → "task",         outcome = payload.status
 ```
 
-   **EXACT — remaining fields:** `agent_pseudonym = sha256(`${agent_key}|cubic-network-v1`).toString("hex").slice(0, 16)` (agent_key resolved from the envelope's agent_id); `agent_category` = the intent's tool row `category` (events without a tool context → `"control"`); `risk_class` = the intent's risk class (`"low"` when unavailable). Nothing else is written — allowlist only; tool arguments, resource strings, prompts, tenant identity, and policy internals are NEVER projected.
-
-2. **Bus wiring (EXACT):** inside `emit()`, after the `audit_events` insert, if the event type is in the projection map, insert the `network_events` row in the same call (same transaction if one is open; sequential inserts are acceptable for the MVP).
+2. **EXACT — field resolution order** (projection runs inside `emit()`, which only receives the envelope + best-effort `meta`):
+   - `agent_key` = `meta.agent_key` → else `SELECT agent_key FROM agents WHERE id = envelope.agent_id` → else skip projection (no row).
+   - `agent_pseudonym` = `sha256(agent_key + "|cubic-network-v1").hexdigest.slice(0, 16)` (node:crypto).
+   - causal intent: `payload.intent_id` if present → else `capability_id` → `capabilities.decision_id` → `decisions.intent_id` → `intents`; else `approval_id` → `approvals.decision_id` → `decisions.intent_id`; else `execution_id` → `executions.capability_id` → (as capability); else `payment_id` → `payments.capability_id` → (as capability); else none.
+   - `agent_category` = `meta.category` → else the intent's tool row `category` → else `"control"`.
+   - `risk_class` = `meta.risk_class` → else the intent's `risk_class` → else `"low"`.
+   - Nothing else is written — allowlist only; tool arguments, resource strings, prompts, tenant identity, and policy internals are NEVER projected. Orchestrator call sites SHOULD pass `meta` (`agent_key`, tool `category`, intent `risk_class`) where already known.
 
 3. **EXACT — routes:**
    - `GET /api/network/events?limit=&before_id=` — paged `network_events` newest-first: `{ok:true, data:{events:[{id, event_type, agent_pseudonym, agent_category, action_class, outcome, risk_class, created_at}]}}`.
-   - `GET /api/network/stream` — SSE, `Content-Type: text/event-stream`: first sends the last 100 events as `event: network\ndata: {…same row shape…}\n\n` (oldest first), then live tail, plus a `: ping\n\n` comment heartbeat every 15s. On client disconnect, clean up (no leaked timers).
+   - `GET /api/network/stream` — SSE, `Content-Type: text/event-stream`: first the last 100 events as `event: network\ndata: {…same row shape…}\n\n` (oldest first), then live tail, plus a `: ping\n\n` comment heartbeat every 15s. On disconnect, clean up (no leaked timers).
    - `GET /api/network/stats` — `{ok:true, data:{agents_observed, intents_evaluated, allowed, denied, escalated, payments_completed}}` — all COUNTs over `network_events` (GROUP BY outcome/action_class).
 
-4. **EXACT — `demo/swarm.ts`**: 8 synthetic agents spread over clusters `research, trading, defi, coding, deploy, payments` (agent_keys `agent:swarm-1` … `agent:swarm-8`, `environment:"demo"`), each looping a small scripted set of real `runToolCall` invocations (allowed + occasionally denied ones, e.g. a `.env` read attempt) at random 1–5s intervals. Runs via `pnpm --filter app swarm` (tsx). All swarm agents pass through the real ingest → policy → projection pipeline — no synthetic event injection.
+4. **EXACT — `demo/swarm.ts`**: 8 synthetic agents (`agent:swarm-1` … `agent:swarm-8`) spread over the REACHABLE clusters `coding, deploy, security, control` (2 agents each — these are the seeded tool categories, so clusters actually occur). Before looping, upsert idempotently into the demo tenant per agent: an `agents` row (`environment:"demo"`, `status:"active"`, `declared_capabilities: ["github.get_pull_request","github.read_file","scanner.scan"]`) + one open `tasks` row (budget 50). Then loop a small scripted set of real `runToolCall` invocations (allowed reads + one `.env` read attempt each) at random 1–5s intervals. Runs via `pnpm --filter app swarm` (tsx). All swarm agents pass through the real ingest → policy → projection pipeline — no synthetic event injection.
 
 ## Acceptance criteria
 

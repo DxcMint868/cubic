@@ -28,6 +28,7 @@ export interface ToolCall {
 }
 
 export interface NormalizedIntent {
+  tool: string;                        // "github.merge_pull_request" (echoed from the ToolCall)
   action: string;                      // "read_file" | "merge_pull_request" | "purchase_security_scan" | ...
   resource: string;                    // "acme/backend#421" | "acme/backend/.env.production"
   risk_class: RiskClass;
@@ -80,7 +81,15 @@ export interface IssuedCapability {
 }
 ```
 
-API error codes (single enum, used by every route): `AGENT_NOT_FOUND`, `TASK_NOT_FOUND`, `TOOL_NOT_FOUND`, `INVALID_REQUEST`, `CAPABILITY_REJECTED`, `PAYMENT_REQUIRED`, `INTERNAL`.
+API error codes (single enum, used by every route) — EXACT code for `domain.ts`:
+
+```ts
+export const apiErrorCodes = [
+  "AGENT_NOT_FOUND", "TASK_NOT_FOUND", "TOOL_NOT_FOUND", "INVALID_REQUEST",
+  "CAPABILITY_REJECTED", "PAYMENT_REQUIRED", "INTERNAL",
+] as const;
+export type ApiErrorCode = (typeof apiErrorCodes)[number];
+```
 
 
 ## A. Current-state assessment
@@ -138,8 +147,7 @@ app/src/server/
   payments/
     x402.ts               # x402 challenge fulfillment + settlement recording (plan-05)
   ledger/
-    provider.ts           # SecretProvider / Approval boundary
-    dev.ts                # DevApprovalProvider (explicitly NOT hardware)
+    provider.ts           # ApprovalProvider re-export + SecretProtector interface
     keyring.ts            # wallet-cli ring provider (plan-06)
   graph/
     agent0.ts             # Agent0/ERC-8004 subgraph client (plan-07)
@@ -177,7 +185,7 @@ Boundary rules (non-negotiable, from `AGENTS.md` / `PROJECT.md`):
 
 Demo task: *"Analyze this service and purchase a security scan if permitted to spend up to $0.50."*
 
-1. Scripted agent opens task `task:demo-1` (budget 50 cents) and calls `POST /api/gateway/tool-call` with `{task_id, agent_key: "agent:8472", tool: "scanner.scan", arguments: {target}}` — or the same call via the MCP facade.
+1. Scripted agent uses the seeded demo task (uuid, budget 50 cents) and calls `POST /api/gateway/tool-call` with `{task_id, agent_key: "agent:8472", tool: "scanner.scan", arguments: {target}}` — or the same call via the MCP facade.
 2. `ingest.ts` resolves agent/tool/task/policy → intent row → `intent.created`.
 3. `normalize.ts` → structured intent `{action: "purchase_security_scan", resource, risk_class: "medium"}`.
 4. `context/` gathers facts: task budget remaining, tool default risk, agent reputation (Graph in plan-07).
@@ -197,7 +205,7 @@ Demo task: *"Analyze this service and purchase a security scan if permitted to s
 | Spend exceeds task budget | DENY (payment policy) | same |
 | Tampered / unknown capability | rejected, no execution | `capability.rejected` |
 | Expired capability | rejected reason=expired | `capability.rejected` |
-| Capability replay (nonce reuse) | rejected reason=replay | `capability.rejected` |
+| Capability reused (same capability consumed again) | rejected reason=replay | `capability.rejected` |
 | Low agent reputation | ESCALATE (or DENY per policy) | `policy.evaluated`, `capability.escalated` |
 | High-risk action | ESCALATE → approval required | `capability.escalated`, `ledger.approval.*` |
 | Approval rejected | no capability, task records denial | `ledger.approval.completed` (rejected) |
@@ -216,7 +224,7 @@ All tables tenant-scoped where relevant. UUID pk defaults; `timestamptz` everywh
 - `policies(id, tenant_id, name, version int, rules jsonb, created_at)` — `rules` is the deterministic rule document (shape finalized in plan-02)
 - `tasks(id, tenant_id, agent_id→agents, title, budget_usd_cents?, status, created_at)`
 - `intents(id, task_id→tasks, agent_id, tool, resource, arguments_redacted jsonb, risk_class, origin, normalized jsonb, created_at)`
-- `decisions(id, intent_id→intents, decision check(allow|deny|escalate), matched_policy, reasons jsonb, context_snapshot_hash, risk_score, created_at)`
+- `decisions(id, intent_id→intents, decision check(allow|deny|escalate), matched_policy, matched_rule_id, reasons jsonb, context_snapshot_hash, risk_score, created_at)`
 - `capabilities(id, decision_id→decisions, subject, action, resource, constraints jsonb, budget_usd_cents?, expires_at, nonce unique, policy_hash, status check(issued|consumed|expired|revoked), issued_at, consumed_at?)`
 - `approvals(id, decision_id→decisions, type check(ledger|human), status check(pending|approved|rejected), provider, provider_ref?, requested_at, completed_at?)`
 - `executions(id, capability_id→capabilities, tool, status check(running|succeeded|failed), executor, result_summary, error?, started_at, completed_at?)`
@@ -240,7 +248,7 @@ Envelope (every event):
 |---|---|
 | `intent.created` | `intent_id`, `tool`, `resource?`, `risk_class`, `origin: "agent"\|"payment_discovery"` |
 | `policy.evaluated` | `intent_id`, `decision_id`, `decision`, `matched_policy`, `matched_rule_id`, `reason_codes: string[]`, `risk_score: number` |
-| `capability.issued` | `capability_id`, `decision_id`, `subject`, `action`, `resource`, `budget_usd_cents?`, `expires_at`, `nonce` |
+| `capability.issued` | `capability_id`, `decision_id`, `subject`, `action`, `resource`, `budget_usd_cents?`, `expires_at`, `nonce`, `policy_hash` |
 | `capability.denied` | `intent_id`, `decision_id`, `reason_codes: string[]` |
 | `capability.escalated` | `intent_id`, `decision_id`, `approval_id`, `reason_codes: string[]` |
 | `capability.consumed` | `capability_id`, `execution_id?` |
@@ -274,6 +282,8 @@ Public projection mapping (plan-08) is an **allowlist**: `{event_type → action
 | POST | `/api/services/scanner/scan` | executor | the paid service (dev mode → x402-gated in 05) | 04/05 |
 | POST | `/api/approvals/[id]/resolve` | dev approval flow | approve/reject a pending approval | 06 |
 | POST | `/api/demo/seed` | demo | reset + seed demo tenant fixtures | 01 |
+| GET | `/api/network/stats` | network UI | aggregate counters from `network_events` | 08 |
+| POST | `/api/demo/run` | demo | seed + happy-path sequence (plan-10 owns this route) | 10 |
 | POST | `/api/mcp` | MCP clients | streamable-HTTP MCP facade | 04 |
 
 Agent identification for MVP: `x-cubic-agent` header (agent_key) plus `x-cubic-task` header or `task_id` in the body. Real authentication is explicitly out of scope (§M).
@@ -298,11 +308,14 @@ Agent identification for MVP: `x-cubic-agent` header (agent_key) plus `x-cubic-t
   "reasons": [{ "code": "policy_default_allow" }],
   "risk_score": 10,
   "approval_id": null,
+  "payment_required": null,
   "capability": { "capability_id": "uuid", "subject": "agent:8472", "action": "read_file", "resource": "acme/backend/README.md", "constraints": {}, "budget_usd_cents": null, "expires_at": "ISO-8601", "nonce": "64-hex", "policy_hash": "sha256-hex" },
   "payment": null,
   "execution": null
 }
 ```
+
+Stages fill in as their waves land; unset stages are `null`, never omitted. When set, `payment_required = { "price_usd_cents": number, "challenge": unknown }` (the agent re-submits a purchase intent; see §J).
 
 **EXACT — `GET /api/audit/trace/[taskId]` response `data` shape:**
 
@@ -329,7 +342,7 @@ Cubic receives tool calls at two equivalent boundaries: the HTTP ingest route an
 
 ## I. Ledger integration
 
-Provider boundary in `ledger/`. `DevApprovalProvider` (default): in-app approval queue — explicitly labeled dev, never claimed as hardware. `LedgerKeyRingProvider` (plan-06): `wallet-cli ring` for (a) high-risk approval completion and (b) Key Ring encryption of the scanner payment authority key at rest. Plan-06 starts with an install/verify spike because wallet-cli is absent on this machine; if it cannot run here, the hardware path is documented as blocked and DevProvider remains — never equivalence claims.
+Approval boundary: the `ApprovalProvider` interface (defined in `gateway/approval/provider.ts`, plan-02) with `DevApprovalProvider` as the default (in-app approval queue — explicitly labeled `provider:"dev"`, never claimed as hardware). `ledger/provider.ts` (plan-06) re-exports that interface and adds the `SecretProtector` interface; `LedgerKeyRingProvider` (plan-06) implements both via `wallet-cli ring`: (a) high-risk approval completion and (b) Key Ring encryption of the scanner payment authority key at rest. Plan-06 starts with an install/verify spike because wallet-cli is absent on this machine; if it cannot run here, the hardware path is documented as blocked and DevProvider remains — never equivalence claims.
 
 ## J. Hedera integration
 
