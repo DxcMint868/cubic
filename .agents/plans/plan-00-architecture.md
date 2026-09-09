@@ -10,6 +10,79 @@ Shared architecture baseline for the MVP slice plans (`plan-01` … `plan-10`) i
 Slice plans link here for shared contracts (data model, event model, API surface, env vars) instead of restating them.
 If a slice plan conflicts with this file, this file wins unless `PROJECT.md` / `DESIGN.md` / `AGENTS.md` say otherwise.
 
+**How to use the plans (binding rule for all implementation agents):** sections marked **EXACT** are verbatim contracts — copy the code/JSON as written, do not redesign, rename, or "improve" them. If an **EXACT** block fails to compile or is factually wrong, STOP and report the failure in your final report instead of improvising a replacement. Steps inside a plan are ordered; execute them in order.
+
+## B.1 EXACT — shared domain types
+
+Every server module imports these from a single `app/src/server/domain.ts` (created in plan-01). No plan may redefine them.
+
+```ts
+export type RiskClass = "low" | "medium" | "high" | "critical";
+export type DecisionType = "allow" | "deny" | "escalate";
+
+export interface ToolCall {
+  task_id?: string;                    // uuid; omit → gateway uses the agent's latest open task
+  agent_key: string;                   // "agent:8472"
+  tool: string;                        // "github.merge_pull_request"
+  arguments: Record<string, unknown>;
+}
+
+export interface NormalizedIntent {
+  action: string;                      // "read_file" | "merge_pull_request" | "purchase_security_scan" | ...
+  resource: string;                    // "acme/backend#421" | "acme/backend/.env.production"
+  risk_class: RiskClass;
+  resource_class: "normal" | "secret" | "cross_task";
+  amount_usd_cents?: number;           // present only for purchase intents
+}
+
+export interface Facts {
+  agent_status: "active" | "suspended";
+  agent_reputation: number;            // 0..1
+  tool_default_risk: RiskClass;
+  task_budget_usd_cents: number | null;
+  budget_spent_usd_cents: number;      // sum of completed payments for the task
+}
+
+export type ReasonCode =
+  | "secret_resource"
+  | "resource_outside_task"
+  | "tool_not_allowed"
+  | "service_not_approved"
+  | "budget_exceeded"
+  | "reputation_below_threshold"
+  | "risk_requires_approval"
+  | "policy_default_allow"
+  | "policy_default_deny"
+  | "no_default_rule"
+  | "approval_rejected"
+  | "payment_failed";
+
+export interface Reason { code: ReasonCode; detail?: string }
+
+export interface DecisionResult {
+  decision: DecisionType;
+  matched_policy: string;              // "default-v1"
+  matched_rule_id: string;             // "deny-secret-resources"
+  reasons: Reason[];
+  risk_score: 10 | 40 | 70 | 90;       // low | medium | high | critical
+}
+
+export interface IssuedCapability {
+  capability_id: string;               // uuid
+  subject: string;                     // "agent:8472"
+  action: string;
+  resource: string;
+  constraints: Record<string, unknown>;
+  budget_usd_cents: number | null;
+  expires_at: string;                  // ISO-8601
+  nonce: string;                       // 32-byte hex (64 chars)
+  policy_hash: string;                 // sha256 hex of canonical matched-policy JSON
+}
+```
+
+API error codes (single enum, used by every route): `AGENT_NOT_FOUND`, `TASK_NOT_FOUND`, `TOOL_NOT_FOUND`, `INVALID_REQUEST`, `CAPABILITY_REJECTED`, `PAYMENT_REQUIRED`, `INTERNAL`.
+
+
 ## A. Current-state assessment
 
 Verified against the working tree (2026-09-10):
@@ -161,11 +234,29 @@ Envelope (every event):
 { "event_id": "uuid", "event_type": "…", "tenant_id": "…", "task_id": "…", "agent_id": "…", "occurred_at": "ISO-8601", "payload": {} }
 ```
 
-Canonical types (union in `events/types.ts`, zod-validated):
+**EXACT — canonical event types and payload fields** (zod schemas in `events/types.ts`, created in plan-01; every field below is required unless marked `?`):
 
-`intent.created`, `policy.evaluated`, `capability.issued`, `capability.denied`, `capability.escalated`, `capability.consumed`, `capability.rejected`, `ledger.approval.requested`, `ledger.approval.completed`, `payment.requested`, `payment.completed`, `payment.failed`, `service.discovered`, `tool.execution.started`, `tool.execution.completed`, `tool.execution.failed`, `task.completed`
+| event_type | payload fields |
+|---|---|
+| `intent.created` | `intent_id`, `tool`, `resource?`, `risk_class`, `origin: "agent"\|"payment_discovery"` |
+| `policy.evaluated` | `intent_id`, `decision_id`, `decision`, `matched_policy`, `matched_rule_id`, `reason_codes: string[]`, `risk_score: number` |
+| `capability.issued` | `capability_id`, `decision_id`, `subject`, `action`, `resource`, `budget_usd_cents?`, `expires_at`, `nonce` |
+| `capability.denied` | `intent_id`, `decision_id`, `reason_codes: string[]` |
+| `capability.escalated` | `intent_id`, `decision_id`, `approval_id`, `reason_codes: string[]` |
+| `capability.consumed` | `capability_id`, `execution_id?` |
+| `capability.rejected` | `capability_id?`, `reason: "not_found"\|"replay"\|"expired"\|"action_mismatch"\|"resource_mismatch"\|"budget_exceeded"`, `requested_action?`, `requested_resource?` |
+| `ledger.approval.requested` | `approval_id`, `decision_id`, `provider: "dev"\|"ledger"`, `action`, `resource` |
+| `ledger.approval.completed` | `approval_id`, `decision_id`, `provider`, `outcome: "approved"\|"rejected"` |
+| `payment.requested` | `payment_id`, `capability_id`, `service`, `network: "hedera"`, `amount_usd_cents` |
+| `payment.completed` | `payment_id`, `capability_id`, `settlement_ref` |
+| `payment.failed` | `payment_id`, `capability_id`, `error_code` |
+| `service.discovered` | `intent_id`, `service`, `price_usd_cents`, `challenge_ref` |
+| `tool.execution.started` | `execution_id`, `capability_id`, `tool`, `resource` |
+| `tool.execution.completed` | `execution_id`, `capability_id`, `result_summary` |
+| `tool.execution.failed` | `execution_id`, `capability_id`, `error_code` |
+| `task.completed` | `task_id`, `status: "completed"\|"failed"`, `summary?` |
 
-Chain linkage: payloads carry the ids needed to reconstruct `agent → task → intent → decision → capability → payment/execution → result` (e.g. `policy.evaluated` carries `intent_id` + `decision_id`).
+Chain linkage: the fields above are exactly what makes `agent → task → intent → decision → capability → payment/execution → result` reconstructable (via the envelope's `task_id`/`agent_id` plus the id fields inside payloads).
 
 Public projection mapping (plan-08) is an **allowlist**: `{event_type → action_class, agent pseudonym, category, outcome, risk_class}`. Never projected: tool arguments, prompts, resource strings, secrets, policy internals, tenant identity.
 
@@ -186,6 +277,47 @@ Public projection mapping (plan-08) is an **allowlist**: `{event_type → action
 | POST | `/api/mcp` | MCP clients | streamable-HTTP MCP facade | 04 |
 
 Agent identification for MVP: `x-cubic-agent` header (agent_key) plus `x-cubic-task` header or `task_id` in the body. Real authentication is explicitly out of scope (§M).
+
+**EXACT — response envelope (every route, no exceptions):**
+
+```json
+// success — HTTP 2xx
+{ "ok": true, "data": { } }
+// error — HTTP 4xx/5xx
+{ "ok": false, "error": { "code": "TOOL_NOT_FOUND", "message": "human-readable" } }
+```
+
+**EXACT — `POST /api/gateway/tool-call` response `data` shape** (fields fill in as waves land; unset stages are `null`, never omitted):
+
+```json
+{
+  "intent_id": "uuid",
+  "decision": "allow",
+  "matched_policy": "default-v1",
+  "matched_rule_id": "default-allow",
+  "reasons": [{ "code": "policy_default_allow" }],
+  "risk_score": 10,
+  "approval_id": null,
+  "capability": { "capability_id": "uuid", "subject": "agent:8472", "action": "read_file", "resource": "acme/backend/README.md", "constraints": {}, "budget_usd_cents": null, "expires_at": "ISO-8601", "nonce": "64-hex", "policy_hash": "sha256-hex" },
+  "payment": null,
+  "execution": null
+}
+```
+
+**EXACT — `GET /api/audit/trace/[taskId]` response `data` shape:**
+
+```json
+{
+  "task": { "id": "uuid", "title": "…", "budget_usd_cents": 50, "status": "open" },
+  "chain": [
+    { "intent": { }, "decision": { } | null, "capability": { } | null,
+      "payments": [ ], "executions": [ ], "approvals": [ ] }
+  ],
+  "events": [ { "event_type": "…", "occurred_at": "…", "payload": { } } ]
+}
+```
+
+`chain` is ordered by intent creation; `events` is the full ordered `audit_events` list for the task.
 
 ## H. MCP integration
 

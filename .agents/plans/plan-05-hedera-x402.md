@@ -6,34 +6,60 @@ depends-on: [plan-04-execution-mcp]
 
 # Plan 05 — Hedera x402: the paid security scan as a real consequence of authorization
 
+**HOW TO USE:** **EXACT** blocks are verbatim contracts — copy them. Package names are NOT given: task 0 pins them. Steps are ordered.
+
 ## Objective
 
 The scanner becomes a genuinely x402-gated service settled through Blocky402 on Hedera testnet. Spending is a policy decision; the agent never holds payment credentials.
 
 ## Preconditions
 
-plan-04 merged; `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY` set server-side (payment authority wallet, funded on testnet); plan-00 §J read.
+plan-04 merged; `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_KEY` funded on testnet (if absent: implement everything, mark live-settlement ACs `blocked-on-env`, never fake a settlement).
 
-## Tasks
+## Steps
 
-0. **Spike (timeboxed, do first)**: verify the current official Hedera x402 stack against live docs — exact client/facilitator package names, Blocky402 integration requirements, the testnet pricing asset. Record pinned versions + findings by appending a `## Spike findings` section to **this plan file** (the wave merger folds them into `MEMORY.md` — do not edit `MEMORY.md` yourself). Do not trust package names in this plan.
-1. **402 gate**: `POST /api/services/scanner/scan` without valid payment → `402` + x402 payment challenge (`X402_SCANNER_PRICE_CENTS`, default 25). Keep an `X402_DEV_BYPASS=1` escape hatch for offline tests, loudly logged whenever used.
-2. **Discovery path**: when the executor relays a 402, the gateway emits `service.discovered` and the agent path re-submits a purchase intent (`scanner.scan` with `purchase:true`), normalized to `action=purchase_security_scan` with the amount taken from the challenge.
-3. **Payment policy**: refine `payment-v1` rules — service allowlist, `task_budget_remaining >= price`, reputation rule from facts. DENY → `capability.denied` (over-budget demo fixture: a $0.10 task vs the $0.25 price).
-4. **`payments/x402.ts`**: fulfill the challenge with the server-held payment authority (`HEDERA_OPERATOR_*`), settle via the Blocky402 facilitator on Hedera testnet; persist the `payments` row; emit `payment.requested` → `payment.completed` (with settlement refs) or `payment.failed`.
-5. **Settlement verification**: the scanner returns the report only after verifying settlement through the facilitator — real gating, not header theater.
-6. **Capability integration**: payment capabilities carry `budget_usd_cents`; consume with `amount=price`; failed payment → capability `revoked` + `payment.failed`, execution never starts.
-7. **Docs (track requirement)**: payment-flow documentation (setup, architecture, env vars, the 402 → settlement → result sequence) in `app/README.md` or `docs/`. Note the ≤5-minute demo video requirement for submission.
-8. **Tests**: over-budget DENY (unit); simulated rejected settlement → no report, capability revoked (unit); happy path marked integration/network-gated (skipped without Hedera env).
+0. **Spike (timeboxed, FIRST)**: from live Hedera/x402 docs pin: (a) the official x402 client package for Hedera, (b) Blocky402 facilitator endpoint + required auth, (c) the accepted testnet pricing asset (USDC or equivalent), (d) the exact 402 challenge JSON shape it emits. Append a `## Spike findings` section to THIS plan file with the pinned versions, URLs, and challenge shape. Everything below references "the spike-pinned client" — do not guess package names.
+
+1. **EXACT — 402 gate** on `POST /api/services/scanner/scan`: no valid payment → HTTP 402 with:
+
+```json
+{ "ok": false, "error": { "code": "PAYMENT_REQUIRED", "message": "x402 payment required" },
+  "price_usd_cents": 25, "network": "hedera",
+  "challenge": { "/* spike-pinned x402 challenge shape */": true } }
+```
+
+   `X402_DEV_BYPASS=1` returns the plan-04 dev report instead (log a loud warning line each time it is used).
+
+2. **EXACT — discovery flow** in the orchestrator: when the ScannerExecutor receives a 402, it returns `{status:"payment_required", price_usd_cents, challenge}`; the orchestrator emits `service.discovered` `{intent_id, service:"scanner", price_usd_cents, challenge_ref: sha256(JSON.stringify(challenge))}` and creates a follow-up intent via the normal ingest path: tool `scanner.scan`, args `{target, purchase: true, price_usd_cents}` (`origin:"payment_discovery"`). The plan-02 selection algorithm routes it to `payment-v1` automatically — do not special-case policy.
+
+3. **EXACT — `payments/x402.ts`** interface:
+
+```ts
+export interface PaymentProvider {
+  pay(input: { capability_id: string; service: "scanner"; amount_usd_cents: number; challenge: unknown }): Promise<
+    | { status: "completed"; settlement_ref: string }
+    | { status: "failed"; error_code: string }
+  >;
+  verifySettlement(input: { challenge: unknown; settlement_ref: string }): Promise<boolean>;
+}
+```
+
+   The `HederaX402Provider` implements it with the spike-pinned client + `HEDERA_OPERATOR_*` (server-side only). `X402_SIMULATE_FAILURE=1` → `pay` returns `{status:"failed", error_code:"SIMULATED_SETTLEMENT_FAILURE"}` (for tests).
+
+4. **EXACT — payment wiring** in the orchestrator (purchase intents only): after `allow` + `issueCapability` (budget = `amount_usd_cents`) → insert `payments` row (`status:"requested"`) → emit `payment.requested` → `provider.pay(...)` → completed: update row (`completed`, `x402_ref`, `settled_at`) + emit `payment.completed` → consume capability with `amount` → execute the scan (scanner verifies settlement via `verifySettlement` before returning the report — real gating). Failed: update row (`failed`) + emit `payment.failed` + capability `revoked` + no execution.
+
+5. **Scanner side**: replace the plan-04 direct report with: 402 → (facilitator-verified payment) → report (same report JSON as plan-04, `mode:"x402"`).
+
+6. **Docs (track requirement)**: `docs/payment-flow.md` — setup, env vars, architecture diagram in text, the exact 402 → ALLOW → Blocky402 settlement → report sequence, and a note that the submission requires a ≤5-minute demo video. Match what the code actually does.
 
 ## Acceptance criteria
 
-- [ ] Live end-to-end on Hedera testnet: 402 → policy ALLOW → Blocky402 settlement → report returned; `payments` row + `payment.requested` / `payment.completed` events with settlement references.
-- [ ] The agent holds only a budget-scoped capability; payment authority never leaves the server (automated assertion: no key material in any response or event payload).
-- [ ] A $0.10-budget task → deterministic DENY with a reason code.
-- [ ] Simulated settlement failure → `payment.failed`, no report, capability revoked.
-- [ ] Payment-flow documentation exists and matches the implemented flow.
+- [ ] Live on Hedera testnet (env-gated; skip cleanly without env): 402 → policy allow → settlement → `verifySettlement` true → report; `payments` row `completed` with `x402_ref`; `payment.requested` + `payment.completed` events present in trace.
+- [ ] Over-budget: task with `budget_usd_cents: 10`, scan price 25 → deny with `budget_exceeded` (from `payment-v1`, `budget` rule) — add this as a vitest case with the plan-02 test-double pattern.
+- [ ] `X402_SIMULATE_FAILURE=1` → `payment.failed` event, capability status `revoked`, NO `tool.execution.*` events for that capability, no report.
+- [ ] Automated assertion: no `HEDERA_OPERATOR_KEY` value, and no key material, appears in any API response, event payload, or log line (canary test).
+- [ ] Agent holds only the budget-scoped capability in the response; `docs/payment-flow.md` exists and matches the flow.
 
 ## Out of scope
 
-HCS audit trails / recurring payments (Hedera extra credit — future), a multi-service marketplace.
+HCS audit trails / recurring payments (future), multi-service marketplace.

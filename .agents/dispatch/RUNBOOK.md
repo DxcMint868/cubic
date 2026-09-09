@@ -17,7 +17,7 @@ Two roles:
 | W6 | plan-09 frontend | solo |
 | W7 | plan-10 demo+adversarial | solo |
 
-Hard rules: never launch a wave before the previous wave is fully merged; max 2 agents at once, always in separate worktrees; one agent per plan, prompt pasted verbatim from `.agents/dispatch/plan-XX.md`.
+Hard rules: never launch a wave before the previous wave is fully merged; max 2 agents at once, always in separate worktrees; one agent per plan, prompt pasted verbatim from `.agents/dispatch/plan-XX.md`. Plans contain **EXACT** blocks (verbatim code/JSON contracts) and given/when/then test tables — agents copy them, not redesign them; a plan that can't follow its EXACT blocks must stop and report.
 
 ## Per-wave loop
 

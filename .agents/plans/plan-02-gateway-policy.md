@@ -6,41 +6,138 @@ depends-on: [plan-01-foundation]
 
 # Plan 02 — Gateway core: ingest, intent normalization, deterministic policy
 
+**HOW TO USE:** sections marked **EXACT** are verbatim contracts — copy them as written. If an EXACT block fails, STOP and report; never silently redesign. Steps are ordered.
+
 ## Objective
 
-The heart of Cubic: normalized tool-call ingest → structured intent → deterministic ALLOW / DENY / ESCALATE, with full audit events and a task-trace API.
+The heart of Cubic: `ToolCall` ingest → structured intent → deterministic ALLOW/DENY/ESCALATE, with full audit events and a task-trace API. The LLM (optional, env-gated) may only help normalize; the policy engine is pure and deterministic.
 
 ## Preconditions
 
-plan-01 merged; plan-00 §C/§D/§F/§G read.
+plan-01 merged; plan-00 §B.1/§F/§G read (domain types, event payload fields, response envelope).
 
-## Tasks
+## Steps
 
-1. **`gateway/ingest.ts`**: validate the `ToolCall` (zod: `task_id?`, `agent_key`, `tool`, `arguments`); resolve agent/tool/task/policy from the DB with structured errors for unknowns; create the `intents` row with **redacted arguments** (secret-looking values masked); emit `intent.created`.
-2. **`gateway/normalize.ts`**: rules-based normalizer — maps `(tool, arguments)` → `{action, resource, risk_class}` using the tool registry plus heuristics (e.g. `github.read_file` with a `.env*` path → resource class = secret). Optional LLM assist only behind `LLM_INTENT_PROVIDER`; any LLM error or absence falls back to rules. Normalizer output feeds policy; it never decides.
-3. **`gateway/context/provider.ts`**: `ContextProvider` interface, `getFacts(intent) → Facts`; `StaticContextProvider` returns `{agent_status, tool_default_risk, task_budget_usd_cents, budget_spent_usd_cents, agent_reputation: 0.95}` (reputation becomes real in plan-07).
-4. **`gateway/policy/engine.ts`**: pure function `evaluate(intent, facts, policyRules) → Decision`. Rule document (jsonb, seeded in plan-01, finalized here):
-   - `allow_tools` — tool allowlist per agent/task
-   - `resource_rules` — deny patterns (secret paths, resources outside the task)
-   - `risk_thresholds` — risk_class high|critical → ESCALATE
-   - `budget_rule` — max spend per task (the payment path refines this in plan-05)
-   - `reputation_rule` — min reputation for autonomous action (default 0.80; below → ESCALATE)
+1. **EXACT — `gateway/ingest.ts`** behavior:
+   - Parse body as `ToolCall` (zod; fail → `INVALID_REQUEST`).
+   - Look up agent by `agent_key` within the demo tenant → missing: `AGENT_NOT_FOUND`. Tool row → `TOOL_NOT_FOUND`. Task: `task_id` given → that task; omitted → agent's latest `open` task → none: `TASK_NOT_FOUND`.
+   - **Redaction (EXACT):** any argument whose key matches `/token|secret|password|credential|private_key/i` is replaced with `"[REDACTED]"` before persisting to `intents.arguments_redacted`.
+   - Insert `intents` row (`risk_class` = tool's `default_risk_class` initially, updated post-normalize; `origin` = `"agent"`).
+   - Emit `intent.created` `{intent_id, tool, resource: null, risk_class, origin: "agent"}`.
 
-   Ordered, first-match-wins, precedence documented next to the code and mirrored in plan-00 §D. Every decision returns `matched_policy`, `reasons[]` (machine-readable codes, not prose), `risk_score`.
-5. **`gateway/approval/provider.ts`**: `ApprovalProvider` interface + `DevApprovalProvider`: creates a pending `approvals` row on ESCALATE. Resolution endpoint arrives in plan-06; until then, escalation's terminal state is `pending` and fully traceable.
-6. **`gateway/orchestrator.ts`**: `runToolCall(input)` — ingest → normalize → facts → evaluate → persist `decisions` row → emit `policy.evaluated`; on DENY emit `capability.denied`; on ESCALATE emit `capability.escalated` + create the approval; on ALLOW return a handoff object for plan-03 issuance (until then, respond with the decision only).
-7. **Routes**: `POST /api/gateway/tool-call` (runs the orchestrator); `GET /api/audit/events` (paged, filters `task_id`/`event_type`); `GET /api/audit/trace/[taskId]` (task + ordered chain: intents → decisions → later capabilities/payments/executions → events).
-8. **Policy tests** (table-driven vitest): allowed read → allow; unknown tool → deny; secret-path read (`.env.production`) → deny; cross-task resource → deny; high-risk tool → escalate; low reputation (fixture override) → escalate; empty policy → deny (default-deny posture).
+2. **EXACT — `gateway/normalize.ts`** mapping (pure function of `(tool, args)`):
+
+```text
+github.get_pull_request   → action "get_pull_request",      resource `${args.repo}#${args.pr}`,  risk low
+github.read_file          → action "read_file",             resource `${args.repo}/${args.path}`, risk low
+github.merge_pull_request  → action "merge_pull_request",    resource `${args.repo}#${args.pr}`,  risk high
+deploy.production         → action "deploy_production",     resource `${args.repo}`,              risk critical
+scanner.scan  (args.purchase !== true) → action "scan",     resource `${args.target}`,           risk medium
+scanner.scan  (args.purchase === true) → action "purchase_security_scan", resource `${args.target}`,
+                                          risk medium, amount_usd_cents = args.price_usd_cents
+task.complete             → action "task_complete",         resource = task_id,                  risk low
+
+resource_class:
+  "secret"     if tool == "github.read_file" && String(args.path).startsWith(".env")
+  "cross_task" if args.repo is defined && args.repo !== "acme/backend"   // demo task repo literal
+  "normal"     otherwise
+```
+
+   Optional LLM assist **only** behind `LLM_INTENT_PROVIDER`; on any error or if unset, the rules above are the output. Update the intent row's `normalized` + `risk_class` after normalizing.
+
+3. **EXACT — facts builder** (`gateway/context/provider.ts`): `StaticContextProvider.getFacts(intent, ctx)` returns `{ agent_status: <agents.status>, agent_reputation: 0.95, tool_default_risk: <tools.default_risk_class>, task_budget_usd_cents: <tasks.budget_usd_cents>, budget_spent_usd_cents: SELECT coalesce(sum(amount_usd_cents),0) FROM payments WHERE task's payments completed }`. `budget_spent_usd_cents` = sum of `payments.amount_usd_cents` joined via capability → decision → intent → task where `payments.status = 'completed'`. plan-07 replaces the reputation source; the `Facts` shape does not change.
+
+4. **EXACT — policy rule documents.** Replace the three stub policy `rules` in `demo/seed.ts` with exactly these (and add a `serviceFor` helper):
+
+```json
+"default-v1": { "version": 1, "rules": [
+  { "id": "deny-secret-resources", "type": "resource_class", "match": ["secret"], "decision": "deny", "reason": "secret_resource" },
+  { "id": "deny-cross-task", "type": "resource_class", "match": ["cross_task"], "decision": "deny", "reason": "resource_outside_task" },
+  { "id": "tool-allowlist", "type": "tool_allowlist",
+    "tools": ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"],
+    "decision": "deny", "reason": "tool_not_allowed" },
+  { "id": "reputation-floor", "type": "min_reputation", "min": 0.80, "decision": "escalate", "reason": "reputation_below_threshold" },
+  { "id": "risk-approval", "type": "risk_class", "match": ["high", "critical"], "decision": "escalate", "reason": "risk_requires_approval" },
+  { "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }
+]}
+
+"payment-v1": { "version": 1, "rules": [
+  { "id": "service-allowlist", "type": "service_allowlist", "services": ["scanner"], "decision": "deny", "reason": "service_not_approved" },
+  { "id": "budget", "type": "budget", "decision": "deny", "reason": "budget_exceeded" },
+  { "id": "reputation-floor", "type": "min_reputation", "min": 0.80, "decision": "escalate", "reason": "reputation_below_threshold" },
+  { "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }
+]}
+
+"production-merge-v1": { "version": 1, "rules": [
+  { "id": "merge-only", "type": "tool_allowlist", "tools": ["github.merge_pull_request"], "decision": "deny", "reason": "tool_not_allowed" },
+  { "id": "merge-reputation", "type": "min_reputation", "min": 0.90, "decision": "escalate", "reason": "reputation_below_threshold" },
+  { "id": "merge-risk", "type": "risk_class", "match": ["high"], "decision": "escalate", "reason": "risk_requires_approval" },
+  { "id": "default-deny", "type": "default", "decision": "deny", "reason": "policy_default_deny" }
+]}
+```
+
+5. **EXACT — policy selection:**
+
+```text
+selectPolicy(intent):
+  if intent.amount_usd_cents != null → "payment-v1"
+  else if intent.action == "merge_pull_request" → "production-merge-v1"
+  else → "default-v1"
+```
+
+6. **EXACT — `gateway/policy/engine.ts`** rule semantics (evaluate in array order, first match wins):
+
+```text
+resource_class   applies if intent.resource_class ∈ rule.match
+tool_allowlist   applies if intent.tool ∉ rule.tools
+service_allowlist applies if serviceFor(intent) ∉ rule.services
+                   serviceFor: "purchase_security_scan" → "scanner"; anything else → null (rule never applies)
+budget           applies if intent.amount_usd_cents >
+                   (facts.task_budget_usd_cents - facts.budget_spent_usd_cents)
+                   (also applies when facts.task_budget_usd_cents is null)
+min_reputation   applies if facts.agent_reputation < rule.min
+risk_class       applies if intent.risk_class ∈ rule.match
+default          always applies
+
+evaluate() returns DecisionResult { decision, matched_policy, matched_rule_id, reasons: [{code: rule.reason}],
+  risk_score: {low:10, medium:40, high:70, critical:90}[intent.risk_class] }.
+If no rule matched (missing default rule) → deny with reason "no_default_rule".
+```
+
+   The engine is a pure function: `evaluate(intent: NormalizedIntent & {tool: string}, facts: Facts, policyRules: Rule[]): DecisionResult`. No DB, no clock, no randomness inside.
+
+7. **EXACT — `gateway/approval/provider.ts`**: `ApprovalProvider` interface `{ request(input: {decision_id, action, resource, risk_class, reason_codes}): Promise<{approval_id: string}> }`. `DevApprovalProvider` inserts an `approvals` row `{type: "ledger", provider: "dev", status: "pending"}` and returns its id. (Resolution arrives in plan-06.)
+
+8. **EXACT — `gateway/orchestrator.ts`** sequence: ingest → normalize → facts → selectPolicy → evaluate → insert `decisions` row (`context_snapshot_hash` = sha256 of canonical JSON of facts) → emit `policy.evaluated` → then, per decision:
+   - `deny` → emit `capability.denied` `{intent_id, decision_id, reason_codes}`; respond.
+   - `escalate` → `ApprovalProvider.request(...)` → emit `capability.escalated` `{intent_id, decision_id, approval_id, reason_codes}`; respond.
+   - `allow` → return handoff (plan-03 adds issuance; until then respond immediately).
+   Response `data` is exactly the plan-00 §G tool-call shape with `capability/payment/execution = null`.
+
+9. **Routes**: `POST /api/gateway/tool-call` (body = ToolCall, `x-cubic-agent` header overrides `agent_key`); `GET /api/audit/events?task_id=&event_type=&limit=&before_id=` (paged on `audit_events.id desc`); `GET /api/audit/trace/[taskId]` (shape exactly plan-00 §G). All use the `{ok, data|error}` envelope.
 
 ## Acceptance criteria
 
-- [ ] `POST /api/gateway/tool-call` with an allowed tool returns `decision:"allow"` and persists intent + decision rows with `intent.created` + `policy.evaluated` events.
-- [ ] The prompt-injection fixture (`github.read_file` on `.env.production`) returns a deterministic DENY with a machine-readable reason code and a `capability.denied` event.
-- [ ] A high-risk tool returns ESCALATE with a pending `approvals` row and a `capability.escalated` event.
-- [ ] `GET /api/audit/trace/[taskId]` reconstructs the chain for everything recorded so far.
-- [ ] The engine is pure: identical inputs → identical decision (property-style test); with `LLM_INTENT_PROVIDER` unset, no LLM code path executes.
-- [ ] `pnpm typecheck` / `lint` / `test` green.
+- [ ] Vitest table passes exactly (input via `runToolCall`, seed fixture facts, reputation injected by overriding `StaticContextProvider` with a test double):
+
+| # | tool + arguments | reputation | expected decision / matched_rule_id / first reason code |
+|---|---|---|---|
+| 1 | `github.get_pull_request {repo:"acme/backend", pr:421}` | 0.95 | allow / default-allow / policy_default_allow |
+| 2 | `github.delete_repo {repo:"acme/backend"}` | 0.95 | deny / tool-allowlist / tool_not_allowed |
+| 3 | `github.read_file {repo:"acme/backend", path:".env.production"}` | 0.95 | deny / deny-secret-resources / secret_resource |
+| 4 | `github.read_file {repo:"evil/org", path:"src/x.ts"}` | 0.95 | deny / deny-cross-task / resource_outside_task |
+| 5 | `github.merge_pull_request {repo:"acme/backend", pr:421}` | 0.95 | escalate / merge-risk / risk_requires_approval |
+| 6 | `github.get_pull_request {…}` | 0.50 | escalate / reputation-floor / reputation_below_threshold |
+| 7 | policy with `rules: []` | 0.95 | deny / — / no_default_rule |
+| 8 | `scanner.scan {target:"acme/backend#421", purchase:true, price_usd_cents:25}` budget 50, spent 0 | 0.95 | allow (payment-v1 / default-allow) |
+| 9 | same as 8 but task budget 10 | 0.95 | deny / budget / budget_exceeded |
+
+- [ ] Purity test: case 1 evaluated twice → byte-identical `DecisionResult` JSON; with `LLM_INTENT_PROVIDER` unset, no network calls occur (mock fetch and assert zero calls).
+- [ ] Escalate path leaves a pending `approvals` row (`provider:"dev"`) and emits `capability.escalated`.
+- [ ] `GET /api/audit/trace/[taskId]` returns the plan-00 §G shape for everything recorded so far (events ordered, chain keyed by intent).
+- [ ] `curl -s -X POST localhost:3000/api/gateway/tool-call -H 'content-type: application/json' -d '{"agent_key":"agent:8472","tool":"github.get_pull_request","arguments":{"repo":"acme/backend","pr":421}}'` returns an allow decision matching case 1.
+- [ ] `pnpm typecheck && pnpm lint && pnpm test` green.
 
 ## Out of scope
 
-Capability issuance (plan-03), execution (plan-04), payment-specific rules beyond the budget shape (plan-05), reputation source (plan-07).
+Capability issuance (plan-03), execution (plan-04), real reputation source (plan-07).
