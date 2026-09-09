@@ -65,3 +65,7 @@ body {
   border-color: #fff;
   color: #000;
 }
+
+.tab-inactive:hover {
+  color: #9a9a9a;
+}

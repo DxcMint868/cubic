@@ -32,6 +32,7 @@ export default function TeamSection() {
 
   return (
     <section
+      id="team"
       ref={ref}
       style={{
         display: "grid",
@@ -45,9 +46,7 @@ export default function TeamSection() {
       <div
         ref={ref}
         style={{
-          transform: visible
-            ? "translateX(0) scale(1)"
-            : "translateX(-90px) scale(0.78)",
+          transform: visible ? "none" : "translateX(-90px) scale(0.78)",
           opacity: visible ? 1 : 0,
           transformOrigin: "left center",
           transition:
