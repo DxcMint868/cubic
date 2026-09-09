@@ -7,6 +7,7 @@
     "build": "pnpm --filter app build",
     "lint": "pnpm --filter app lint",
     "typecheck": "pnpm --filter app typecheck",
+    "test": "pnpm --filter app test",
     "forge:build": "forge build",
     "forge:test": "forge test"
   }
