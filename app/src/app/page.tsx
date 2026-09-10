@@ -1,7 +1,9 @@
+import DetailsSection from "@/components/DetailsSection";
 import HeroCopy from "@/components/HeroCopy";
 import Logo from "@/components/Logo";
 import Manifesto from "@/components/Manifesto";
 import NetworkCanvas from "@/components/NetworkCanvas";
+import PartnerMarquee from "@/components/PartnerMarquee";
 import TeamSection from "@/components/TeamSection";
 
 const headerNav = ["PRODUCT", "NETWORK", "DOCS"];
@@ -111,6 +113,10 @@ export default function Home() {
       </section>
 
       <TeamSection />
+
+      <PartnerMarquee />
+
+      <DetailsSection />
 
       <footer
         className="mono"
