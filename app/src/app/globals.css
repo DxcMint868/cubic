@@ -156,16 +156,13 @@ body {
 
 @media (max-width: 1024px) {
   .hero {
-    height: auto;
-    min-height: calc(100dvh - 82px);
     display: block;
+    height: auto;
+    min-height: 0;
   }
 
   .hero-canvas-wrap {
-    position: absolute;
-    inset: 0;
-    -webkit-mask-image: linear-gradient(to top, black 55%, transparent 96%);
-    mask-image: linear-gradient(to top, black 55%, transparent 96%);
+    display: none;
   }
 
   .hero-copy {
