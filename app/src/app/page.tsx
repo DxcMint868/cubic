@@ -1,3 +1,4 @@
+import Link from "next/link";
 import DetailsSection from "@/components/DetailsSection";
 import HeroCopy from "@/components/HeroCopy";
 import Logo from "@/components/Logo";
@@ -6,7 +7,11 @@ import NetworkCanvas from "@/components/NetworkCanvas";
 import PartnerMarquee from "@/components/PartnerMarquee";
 import TeamSection from "@/components/TeamSection";
 
-const headerNav = ["PRODUCT", "NETWORK", "DOCS"];
+const headerNav = [
+  { label: "PRODUCT", href: "/" },
+  { label: "NETWORK", href: "/network" },
+  { label: "DOCS", href: "#" },
+];
 const footerLinks = ["GITHUB", "DOCS", "CONTACT"];
 
 export default function Home() {
@@ -25,11 +30,17 @@ export default function Home() {
         </a>
 
         <nav className="mono">
-          {headerNav.map((item) => (
-            <a key={item} href="#" className="link">
-              {item}
-            </a>
-          ))}
+          {headerNav.map((item) =>
+            item.href.startsWith("/") ? (
+              <Link key={item.label} href={item.href} className="link">
+                {item.label}
+              </Link>
+            ) : (
+              <a key={item.label} href={item.href} className="link">
+                {item.label}
+              </a>
+            )
+          )}
         </nav>
 
         <a href="#" className="btn-outline">
