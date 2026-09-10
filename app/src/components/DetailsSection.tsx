@@ -61,8 +61,8 @@ export default function DetailsSection() {
 
   return (
     <section
+      className="section-pad"
       style={{
-        padding: "14vh 7vw",
         borderTop: "1px solid rgba(255,255,255,0.07)",
       }}
     >
@@ -92,12 +92,9 @@ export default function DetailsSection() {
 
       <div
         ref={ref}
+        className="details-grid"
         style={{
           marginTop: "7vh",
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 24,
-          alignItems: "stretch",
         }}
       >
         {CARDS.map((card, i) => (

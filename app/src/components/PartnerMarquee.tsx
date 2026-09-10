@@ -26,7 +26,7 @@ function PartnerRow({ ariaHidden }: { ariaHidden?: boolean }) {
           style={{
             display: "flex",
             alignItems: "center",
-            fontSize: 12,
+            fontSize: "clamp(10px, 1.2vw, 12px)",
             letterSpacing: "0.24em",
             color: "#5a5a5a",
             whiteSpace: "nowrap",
@@ -36,7 +36,7 @@ function PartnerRow({ ariaHidden }: { ariaHidden?: boolean }) {
             style={{
               width: 7,
               height: 7,
-              margin: "0 42px",
+              margin: "0 clamp(18px, 3vw, 42px)",
               border: "1px solid #3a3a3a",
               flexShrink: 0,
             }}

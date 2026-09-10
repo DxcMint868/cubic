@@ -145,7 +145,7 @@ export default function HeroCopy() {
           paddingTop: 26,
           borderTop: "1px solid rgba(255,255,255,0.1)",
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(104px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
           gap: "22px 28px",
           maxWidth: 560,
         }}

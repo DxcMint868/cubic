@@ -19,37 +19,12 @@ export default function Home() {
         flexDirection: "column",
       }}
     >
-      <header
-        style={{
-          position: "sticky",
-          top: 14,
-          zIndex: 10,
-          width: "min(1040px, 86vw)",
-          margin: "14px auto 0",
-          background: "#0d0d0d",
-          border: "1px solid #232323",
-          borderRadius: 12,
-          height: 54,
-          padding: "0 22px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexShrink: 0,
-        }}
-      >
+      <header className="site-header">
         <a href="#" style={{ textDecoration: "none" }}>
           <Logo fontSize={24} />
         </a>
 
-        <nav
-          className="mono"
-          style={{
-            display: "flex",
-            gap: 36,
-            fontSize: 11,
-            letterSpacing: "0.18em",
-          }}
-        >
+        <nav className="mono">
           {headerNav.map((item) => (
             <a key={item} href="#" className="link">
               {item}
@@ -62,50 +37,22 @@ export default function Home() {
         </a>
       </header>
 
-      <div
-        style={{
-          height: "calc(100dvh - 82px)",
-          minHeight: 540,
-          display: "flex",
-          alignItems: "stretch",
-          position: "relative",
-        }}
-      >
-        <section
-          style={{
-            width: "46%",
-            minWidth: 440,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            paddingLeft: "7vw",
-            paddingRight: 48,
-            position: "relative",
-            zIndex: 1,
-          }}
-        >
+      <div className="hero">
+        <section className="hero-copy">
           <HeroCopy />
         </section>
 
-        <div
-          style={{
-            flex: 1,
-            position: "relative",
-            maskImage: "linear-gradient(to right, transparent 0%, black 22%)",
-            WebkitMaskImage:
-              "linear-gradient(to right, transparent 0%, black 22%)",
-          }}
-        >
+        <div className="hero-canvas-wrap">
           <NetworkCanvas />
         </div>
       </div>
 
       <section
+        className="section-pad"
         style={{
           minHeight: "72vh",
           display: "flex",
           alignItems: "center",
-          padding: "14vh 7vw",
           borderTop: "1px solid rgba(255,255,255,0.07)",
         }}
       >
@@ -118,24 +65,10 @@ export default function Home() {
 
       <DetailsSection />
 
-      <footer
-        className="mono"
-        style={{
-          height: 52,
-          padding: "0 7vw",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          borderTop: "1px solid rgba(255,255,255,0.07)",
-          fontSize: 11,
-          letterSpacing: "0.14em",
-          color: "#555",
-          flexShrink: 0,
-        }}
-      >
+      <footer className="mono site-footer">
         <span>© 2026 CUBIC</span>
 
-        <nav style={{ display: "flex", gap: 28 }}>
+        <nav>
           {footerLinks.map((item) => (
             <a key={item} href="#" className="link">
               {item}
@@ -143,7 +76,7 @@ export default function Home() {
           ))}
         </nav>
 
-        <span>AGENT AUTHORIZATION GATEWAY</span>
+        <span className="footer-tag">AGENT AUTHORIZATION GATEWAY</span>
       </footer>
     </main>
   );
