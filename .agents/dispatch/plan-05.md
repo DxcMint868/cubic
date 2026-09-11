@@ -36,6 +36,13 @@ a. DURING the work — after each major step, not just at the end — spawn a co
 b. WHEN FINISHED — BEFORE reporting done — spawn the `contract-reviewer` subagent (repo profile `.opencode/agents/contract-reviewer.md`, invoke by name) on your branch as the final gate. If it returns BLOCK: fix every item (re-consult your council as needed) and re-run the gate until MERGE. Attach the gate verdict + a council-findings summary to your final report. Only then tick your last AC, commit, and report done.
 c. If your harness cannot spawn subagents: do both reviews inline (write the for/against as working notes), execute the contract-reviewer checklist from its file manually, and state plainly in your final report that review was inline, not spawned. "No subagents" is never an excuse to skip review.
 
+PRODUCT REVIEW (the merger runs the `product-owner` gate on your branch after you report done — pre-empt it):
+- Demo-beat coverage: know which PROJECT.md §17 beats your wave serves (yours: Beat 4, machine payment); narrate gaps honestly in your final report.
+- Scope: every feature in PROJECT.md §18 build list or explicitly flagged as proposal — never silent creep/cuts.
+- DESIGN.md language only; no invented synonyms. Mock/dev paths labeled (`mode` fields, `X402_DEV_BYPASS` logging) — a judge must never mistake dev-bypass for a real settlement.
+- Docs you add state what ran live vs blocked/unverified in one plain sentence (see `docs/ledger.md` for the house standard).
+PO BLOCKs on faked integrations and unmarked mocks. If your spike leaves anything unverified, say so exactly.
+
 DEFINITION OF DONE:
 - Every AC in your plan ticked (or explicitly marked blocked-on-env).
 - `pnpm typecheck && pnpm lint && pnpm test` green from repo root.

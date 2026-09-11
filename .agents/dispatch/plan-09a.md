@@ -37,6 +37,12 @@ a. DURING the work — after each major step, not just at the end — spawn a co
 b. WHEN FINISHED — BEFORE reporting done — spawn the `contract-reviewer` subagent (repo profile `.opencode/agents/contract-reviewer.md`, invoke by name) on your branch as the final gate, scoped to phase-A ACs. If it returns BLOCK: fix every item (re-consult your council as needed) and re-run the gate until MERGE. Attach the gate verdict + a council-findings summary to your final report. Only then tick your last phase-A AC, commit, and report done.
 c. If your harness cannot spawn subagents: do both reviews inline (write the for/against as working notes), execute the contract-reviewer checklist from its file manually, and state plainly in your final report that review was inline, not spawned. "No subagents" is never an excuse to skip review.
 
+PRODUCT REVIEW (the merger runs the `product-owner` gate on your branch after you report done — pre-empt it):
+- You serve every demo beat's *watchability*. Risk states legible in monochrome; DENY reasons visible; empty states exact.
+- Binding ask from the plan-06 PO review: TraceView TODOs must include the **provider badge (`dev` vs `ledger`)**, escalation **reason codes** (not a bare badge), and the approval queue — cite the exact fields (`provider` on both approval events, `reason_codes`, `approvals[]`). A demo viewer must see which trust path ran.
+- DESIGN.md language only; no invented synonyms. Demo-flagged swarm activity needs no special styling.
+- Beat numbering follows PROJECT.md §17 exactly (Ledger = Beat 5, machine payment = Beat 4) anywhere you narrate.
+
 DEFINITION OF DONE (phase A):
 - `/network` live over SSE with real events; counters row; empty-state text exactly `"No live events yet — run the demo agent or the swarm."`
 - `/console` overview (agents, tools, policies, tasks via audit-events grouping), `/console/tasks/[id]` full non-payment chain with DENY reasons legible, `/console/agents/[id]` + `/console/decisions/[id]` via trace gathering (no server edits).
