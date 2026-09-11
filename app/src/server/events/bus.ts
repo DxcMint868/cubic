@@ -2,6 +2,7 @@ import { randomUUID as uuid } from "node:crypto";
 import { db } from "../db/client";
 import { auditEvents } from "../db/schema";
 import { emitInput, payloadSchemas, type EmitInput, type EventEnvelope } from "./types";
+import { projectEvent } from "./projection";
 import type { RiskClass } from "../domain";
 
 // Meta is best-effort context for the plan-08 projection. Audit row is unaffected.
@@ -28,6 +29,14 @@ export async function emit(input: EmitInput, meta: ProjectionMeta = {}): Promise
     eventType: envelope.event_type,
     payload: envelope.payload,
   });
-  void meta; // plan-08 wires the projection here; today it is accepted and ignored.
+  // plan-08: privacy-minimized public projection. Best-effort — the audit
+  // insert above already succeeded, so a projection failure must never fail emit.
+  try {
+    await projectEvent(envelope, meta);
+  } catch (err) {
+    console.warn(
+      `network projection skipped for ${envelope.event_type}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   return envelope;
 }

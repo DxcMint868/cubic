@@ -57,11 +57,11 @@ task.completed             → "task",         outcome = payload.status
 
 ## Acceptance criteria
 
-- [ ] **Privacy canary test:** emit `intent.created` whose redacted arguments contain `"CANARY-t0k3n"` and whose agent_key contains `"agent:canary"` → the `network_events` row and all three public routes contain neither `"CANARY"` nor `"agent:canary"` (assert over raw JSON strings).
-- [ ] Projection coverage: for every mapped event type in step 1, emitting it produces exactly one `network_events` row with the exact `action_class`/`outcome` from the table.
-- [ ] SSE test: subscribe, emit 3 events, assert they arrive in order; heartbeat does not break parsing.
-- [ ] Swarm: run briefly → swarm activity appears in `audit_events` AND `network_events` (proving the real pipeline), all swarm rows traceable to `environment:"demo"` agents.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green.
+- [x] **Privacy canary test:** emit `intent.created` whose redacted arguments contain `"CANARY-t0k3n"` and whose agent_key contains `"agent:canary"` → the `network_events` row and all three public routes contain neither `"CANARY"` nor `"agent:canary"` (assert over raw JSON strings).
+- [x] Projection coverage: for every mapped event type in step 1, emitting it produces exactly one `network_events` row with the exact `action_class`/`outcome` from the table.
+- [x] SSE test: subscribe, emit 3 events, assert they arrive in order; heartbeat does not break parsing.
+- [x] Swarm: run briefly → swarm activity appears in `audit_events` AND `network_events` (proving the real pipeline), all swarm rows traceable to `environment:"demo"` agents.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green.
 
 ## Out of scope
 
