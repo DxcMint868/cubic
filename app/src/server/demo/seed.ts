@@ -16,6 +16,12 @@ const fixture = {
     agent_key: "agent:8472", name: "deploy-agent", environment: "demo",
     status: "active", erc8004_identity: null,
     declared_capabilities: ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"],
+  }, {
+    // plan-07 EXACT low-reputation demo agent — GraphContextProvider resolves
+    // erc8004_identity "fixture:low-rep" to the demo fixture trust (0.50).
+    agent_key: "agent:lab-1", name: "low-rep-research-agent", environment: "demo",
+    status: "active", erc8004_identity: "fixture:low-rep",
+    declared_capabilities: ["github.get_pull_request"],
   }],
   tools: [
     { name: "github.get_pull_request", category: "coding", default_risk_class: "low", executor: "github", executor_config: {} },

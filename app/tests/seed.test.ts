@@ -87,12 +87,12 @@ describe("seed", () => {
     await seed();
     const afterDemo = await demoCounts();
 
-    expect(result1.agents).toBe(1);
+    expect(result1.agents).toBe(2); // plan-07: agent:8472 + agent:lab-1 (low-rep fixture)
     expect(result1.tools).toBe(6);
     expect(result1.policies).toBe(3);
     expect(result1.tasks).toBe(1);
     expect(afterDemo).toEqual(mid);
-    expect(afterDemo.agents).toBe(1);
+    expect(afterDemo.agents).toBe(2);
 
     const afterForeign = await foreignRows();
     expect(afterForeign.agentRows).toEqual(beforeForeign.agentRows);
