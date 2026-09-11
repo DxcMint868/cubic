@@ -311,7 +311,7 @@ describe("plan-03 consume / verify / revoke", () => {
     const unbudgeted = await issueAllow();
     const ok = await consumeCapability(unbudgeted.capability_id, { action: unbudgeted.action, resource: unbudgeted.resource });
     expect(ok.status).toBe("consumed"); // amount undefined vs null budget → rule skipped
-  }, 30000);
+  }, 30000); // remote-DB latency: 6+ sequential round-trips blow the 5s default
 
   it("revoke flips issued→revoked; consume after revoke → replay; double revoke → false", async () => {
     const cap = await issueAllow();

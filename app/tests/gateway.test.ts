@@ -209,7 +209,7 @@ describe("plan-02 gateway", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  }, 30000);
+  }, 30000); // remote-DB latency: two full pipelines ≈ 12+ sequential round-trips
 
   it("escalate path: pending dev approvals row + capability.escalated + ledger.approval.requested", async () => {
     setContextProvider(withReputation(0.95));
