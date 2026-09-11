@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import MacWindow from "@/components/MacWindow";
+import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import { useWallet } from "@/components/WalletProvider";
 
@@ -148,10 +149,7 @@ export default function ConsoleLayout({
         </div>
       )}
 
-      <footer className="mono site-footer">
-        <span>© 2026 CUBIC</span>
-        <span className="footer-tag">AGENT AUTHORIZATION GATEWAY</span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

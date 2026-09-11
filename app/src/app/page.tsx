@@ -1,13 +1,14 @@
+import Closer from "@/components/Closer";
 import DetailsSection from "@/components/DetailsSection";
+import DecisionFeed from "@/components/DecisionFeed";
 import HeroCopy from "@/components/HeroCopy";
 import Manifesto from "@/components/Manifesto";
 import MarketSection from "@/components/MarketSection";
+import SiteFooter from "@/components/SiteFooter";
 import NetworkCanvas from "@/components/NetworkCanvas";
 import PartnerMarquee from "@/components/PartnerMarquee";
 import SiteHeader from "@/components/SiteHeader";
 import TeamSection from "@/components/TeamSection";
-
-const footerLinks = ["GITHUB", "DOCS", "CONTACT"];
 
 export default function Home() {
   return (
@@ -49,21 +50,13 @@ export default function Home() {
 
       <DetailsSection />
 
+      <DecisionFeed />
+
       <MarketSection />
 
-      <footer className="mono site-footer">
-        <span>© 2026 CUBIC</span>
+      <Closer />
 
-        <nav>
-          {footerLinks.map((item) => (
-            <a key={item} href="#" className="link">
-              {item}
-            </a>
-          ))}
-        </nav>
-
-        <span className="footer-tag">AGENT AUTHORIZATION GATEWAY</span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

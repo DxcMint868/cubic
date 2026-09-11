@@ -94,6 +94,29 @@ body {
   animation: ring-in 0.35s ease;
 }
 
+.feed-line {
+  animation: ring-in 0.4s ease;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 40px;
+}
+
+@media (max-width: 1024px) {
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+
 .marquee-track {
   display: flex;
   width: max-content;

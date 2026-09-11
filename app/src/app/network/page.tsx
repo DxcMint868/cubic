@@ -3,6 +3,7 @@
 import { useState } from "react";
 import AgentGraph from "@/components/AgentGraph";
 import MacWindow from "@/components/MacWindow";
+import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import { MOCK_AGENTS } from "@/data/agents";
 
@@ -360,17 +361,7 @@ export default function NetworkPage() {
         </div>
       </div>
 
-      <footer className="mono site-footer">
-        <span>© 2026 CUBIC</span>
-        <nav>
-          {["GITHUB", "DOCS", "CONTACT"].map((item) => (
-            <a key={item} href="#" className="link">
-              {item}
-            </a>
-          ))}
-        </nav>
-        <span className="footer-tag">AGENT AUTHORIZATION GATEWAY</span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }
