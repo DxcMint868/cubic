@@ -21,9 +21,12 @@ import { GET as traceGET } from "../src/app/api/audit/trace/[taskId]/route";
 // Test discipline: throwaway tenant test-plan-04, own config-driven price, and
 // GITHUB_TOKEN deleted so the github executor runs mock mode. vi.hoisted runs
 // before imports; config() is lazy, so this fully re-scopes ingest for this file.
+// plan-05: X402_DEV_BYPASS=1 keeps this file's dev-mode scanner contract (the
+// route now defaults to the 402 gate; the gate itself lives in x402.test.ts).
 vi.hoisted(() => {
   process.env.DEMO_TENANT_SLUG = "test-plan-04";
   process.env.X402_SCANNER_PRICE_CENTS = "37";
+  process.env.X402_DEV_BYPASS = "1";
   delete process.env.GITHUB_TOKEN;
 });
 
@@ -168,6 +171,7 @@ afterAll(async () => {
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonymFor(AGENT_KEY)));
   delete process.env.DEMO_TENANT_SLUG;
   delete process.env.X402_SCANNER_PRICE_CENTS;
+  delete process.env.X402_DEV_BYPASS;
 }, 30000);
 
 describe("plan-04 executors", () => {
