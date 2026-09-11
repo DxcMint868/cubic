@@ -7,6 +7,7 @@ import { useWallet } from "@/components/WalletProvider";
 const NAV = [
   { label: "CONSOLE", href: "/console" },
   { label: "NETWORK", href: "/network" },
+  { label: "FAQ", href: "/faq" },
   { label: "DOCS", href: "#" },
 ];
 
