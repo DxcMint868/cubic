@@ -198,7 +198,7 @@ export class HederaX402Provider implements PaymentProvider {
     // challengeError guarantees scheme/network/amount/payTo/extra.feePayer —
     // rebuild a complete requirements object for the SDK + facilitator body.
     const raw = input.challenge as Partial<X402Challenge>;
-    const rawExtra = raw.extra ?? {};
+    const rawExtra = (raw.extra ?? {}) as { feePayer?: string; price_usd_cents?: number };
     const feePayer = rawExtra.feePayer ?? "";
     const requirements: X402Challenge = {
       scheme: "exact",
