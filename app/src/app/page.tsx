@@ -1,6 +1,7 @@
 import DetailsSection from "@/components/DetailsSection";
 import HeroCopy from "@/components/HeroCopy";
 import Manifesto from "@/components/Manifesto";
+import MarketSection from "@/components/MarketSection";
 import NetworkCanvas from "@/components/NetworkCanvas";
 import PartnerMarquee from "@/components/PartnerMarquee";
 import SiteHeader from "@/components/SiteHeader";
@@ -47,6 +48,8 @@ export default function Home() {
       <PartnerMarquee />
 
       <DetailsSection />
+
+      <MarketSection />
 
       <footer className="mono site-footer">
         <span>© 2026 CUBIC</span>
