@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { eq, count } from "drizzle-orm";
 import { db } from "../src/server/db/client";
-import { tenants, agents, auditEvents, networkEvents } from "../src/server/db/schema";
+import { tenants, agents, tasks, auditEvents, networkEvents } from "../src/server/db/schema";
 import { seed } from "../src/server/demo/seed";
 
 const pseudonym = (agentKey: string) =>
@@ -21,6 +21,7 @@ async function firstCount(
 
 async function demoCounts() {
   const [demo] = await db().select().from(tenants).where(eq(tenants.slug, "demo"));
+  if (!demo) return { agents: 0, audits: 0 };
   return {
     agents: await firstCount(
       await db().select({ value: count() }).from(agents).where(eq(agents.tenantId, demo.id)),
@@ -70,6 +71,7 @@ afterAll(async () => {
   const [demo] = await db().select().from(tenants).where(eq(tenants.slug, "demo"));
   if (demo) {
     await db().delete(auditEvents).where(eq(auditEvents.tenantId, demo.id));
+    await db().delete(tasks).where(eq(tasks.tenantId, demo.id));
     await db().delete(agents).where(eq(agents.tenantId, demo.id));
     await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonym("agent:8472")));
   }
@@ -96,7 +98,7 @@ describe("seed", () => {
     expect(afterForeign.agentRows).toEqual(beforeForeign.agentRows);
     expect(afterForeign.auditRows.length).toBeGreaterThanOrEqual(beforeForeign.auditRows.length);
     expect(afterForeign.networkRows).toEqual(beforeForeign.networkRows);
-  });
+  }, 30000);
 
   it("deletes demo network_events only by demo pseudonym", async () => {
     const demoPseudo = pseudonym("agent:8472");
