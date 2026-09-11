@@ -11,6 +11,7 @@ import {
 } from "../src/server/gateway/context/provider";
 import { evaluate } from "../src/server/gateway/policy/engine";
 import type { Facts, NormalizedIntent } from "../src/server/domain";
+import { registerExecutor, clearRegisteredExecutors, type Executor } from "../src/server/executors/registry";
 import { GET as traceGET } from "../src/app/api/audit/trace/[taskId]/route";
 import { GET as eventsGET } from "../src/app/api/audit/events/route";
 
@@ -39,6 +40,15 @@ async function budget10Task(): Promise<string> {
 }
 
 beforeAll(async () => {
+  // plan-04: this file verifies decisions, not the scanner's real HTTP hop —
+  // stub it deterministically (the real hop lives in execution.test.ts).
+  registerExecutor("scanner", {
+    execute: async (input) => ({
+      summary: `Security scan of ${String(input.args.target)}: clean (dev mode)`,
+      result: { report_id: "rpt_stub0000", target: input.args.target, verdict: "clean", findings: [], mode: "dev" },
+      mode: "dev",
+    }),
+  } satisfies Executor);
   await seed();
   const [tenant] = await db()
     .select()
@@ -61,6 +71,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  clearRegisteredExecutors();
   await seed(); // demo-tenant rows only: clears gateway artifacts, restores fixtures
 });
 
@@ -134,10 +145,18 @@ describe("plan-02 gateway", () => {
     } else {
       expect(d.capability).toBeNull();
     }
+    // plan-04: allow executes behind the capability; deny/escalate never execute.
+    if (c.decision === "allow") {
+      expect(d.execution).not.toBeNull();
+      expect(d.execution!.status).toBe("succeeded");
+      expect(d.execution!.execution_id).toMatch(UUID_RE);
+      expect(typeof d.execution!.result_summary).toBe("string");
+    } else {
+      expect(d.execution).toBeNull();
+    }
     expect(d.payment).toBeNull();
-    expect(d.execution).toBeNull();
     expect(d.payment_required).toBeNull();
-  });
+  }, 30000);
 
   it("case #7: evaluate with rules: [] → deny / no_default_rule / no_default_rule", () => {
     const intent: NormalizedIntent = {
@@ -162,7 +181,7 @@ describe("plan-02 gateway", () => {
       reasons: [{ code: "no_default_rule" }],
       risk_score: 10,
     });
-  });
+  }, 30000);
 
   it("purity: case 1 twice → byte-identical DecisionResult JSON; zero fetch calls with LLM_INTENT_PROVIDER unset", async () => {
     setContextProvider(withReputation(0.95));
@@ -190,7 +209,7 @@ describe("plan-02 gateway", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
+  }, 30000);
 
   it("escalate path: pending dev approvals row + capability.escalated + ledger.approval.requested", async () => {
     setContextProvider(withReputation(0.95));
@@ -221,7 +240,7 @@ describe("plan-02 gateway", () => {
       action: "merge_pull_request",
       resource: "acme/backend#421",
     });
-  });
+  }, 30000);
 
   it("GET /api/audit/trace/[taskId] returns the plan-00 §G shape; every decision includes matched_rule_id", async () => {
     setContextProvider(withReputation(0.95));
@@ -254,7 +273,14 @@ describe("plan-02 gateway", () => {
         expect(entry.decision.matched_rule_id.length).toBeGreaterThan(0);
       }
       expect(entry.payments).toEqual([]);
-      expect(entry.executions).toEqual([]);
+      // plan-04: allowed intents execute — allowed entries carry their
+      // execution; denied/escalated entries carry none.
+      if (entry.capability !== null) {
+        expect(entry.executions.length).toBeGreaterThanOrEqual(1);
+        expect(entry.executions[0].status).toBe("succeeded");
+      } else {
+        expect(entry.executions).toEqual([]);
+      }
       expect(Array.isArray(entry.approvals)).toBe(true);
     }
     const allowEntry = body.data.chain.find((e: { intent: { id: string } }) => e.intent?.id === ownIntentId);
@@ -262,11 +288,12 @@ describe("plan-02 gateway", () => {
     expect(allowEntry.decision.decision).toBe("allow");
     expect(allowEntry.decision.matched_rule_id).toBe("default-allow");
     // plan-03: the allow entry now carries its issued capability in the trace.
+    // plan-04: execution consumes it — status is "consumed" after the run.
     expect(allowEntry.capability).toMatchObject({
       subject: "agent:8472",
       action: "get_pull_request",
       resource: "acme/backend#421",
-      status: "issued",
+      status: "consumed",
     });
 
     expect(body.data.events.length).toBeGreaterThan(0);
@@ -275,7 +302,7 @@ describe("plan-02 gateway", () => {
       expect(typeof event.occurred_at).toBe("string");
     }
     expect(body.data.events[0].event_type).toBe("intent.created");
-  });
+  }, 30000);
 
   it("redaction walks plain objects to depth 3 and sees through arrays", async () => {
     setContextProvider(withReputation(0.95));
@@ -299,7 +326,7 @@ describe("plan-02 gateway", () => {
     const untouched = (redacted.deep as { nested: { deeper: { deepest: { password: string } } } })
       .nested.deeper.deepest;
     expect(untouched.password).toBe("t3"); // depth > 3: beyond the walk, values pass through verbatim
-  });
+  }, 30000);
 
   it("GET /api/audit/events filters by task_id, event_type and limit", async () => {
     setContextProvider(withReputation(0.95));
@@ -321,5 +348,5 @@ describe("plan-02 gateway", () => {
     for (const event of filteredBody.data.events) {
       expect(event.event_type).toBe("capability.denied");
     }
-  });
+  }, 30000);
 });

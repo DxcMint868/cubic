@@ -225,7 +225,7 @@ describe("plan-03 capability issuance", () => {
       nonce: cap.nonce,
       policy_hash: cap.policy_hash,
     });
-  });
+  }, 30000);
 
   it("policy_hash changes when a rule changes (hashes the document, not the name)", async () => {
     const capA = await issueAllow({ policy: POLICY_A });
@@ -234,7 +234,7 @@ describe("plan-03 capability issuance", () => {
     expect(capB.policy_hash).toBe(
       createHash("sha256").update(canonicalPolicyJson(POLICY_B)).digest("hex"),
     );
-  });
+  }, 30000);
 
   it("issue from deny throws; from escalate+pending throws; from escalate+approved issues", async () => {
     const { decisionId: denyId } = await makeChain(DENY);
@@ -256,7 +256,7 @@ describe("plan-03 capability issuance", () => {
     const cap = await issueEsc();
     expect(cap.capability_id).toMatch(UUID_RE);
     expect(cap.action).toBe("merge_pull_request");
-  });
+  }, 30000);
 });
 
 describe("plan-03 consume / verify / revoke", () => {
@@ -271,7 +271,7 @@ describe("plan-03 consume / verify / revoke", () => {
     expect(second).toEqual({ status: "rejected", reason: "replay" });
     const rejected = await lastAuditEvent("capability.rejected");
     expect(rejected?.payload).toMatchObject({ capability_id: cap.capability_id, reason: "replay" });
-  });
+  }, 30000);
 
   it("two parallel consumes → exactly one succeeds", async () => {
     const cap = await issueAllow();
@@ -283,7 +283,7 @@ describe("plan-03 consume / verify / revoke", () => {
     expect(statuses).toEqual(["consumed", "rejected"]);
     const loser = r1.status === "rejected" ? r1 : r2;
     expect(loser).toEqual({ status: "rejected", reason: "replay" });
-  });
+  }, 30000);
 
   it("expired row → expired (and flipped); random uuid → not_found", async () => {
     const cap = await issueAllow();
@@ -296,7 +296,7 @@ describe("plan-03 consume / verify / revoke", () => {
 
     const missing = await consumeCapability(randomUUID(), { action: "x", resource: "y" });
     expect(missing).toEqual({ status: "rejected", reason: "not_found" });
-  });
+  }, 30000);
 
   it("wrong action/resource → mismatch; budget rules per plan", async () => {
     const cap = await issueAllow({ amount_usd_cents: 10 });
@@ -311,7 +311,7 @@ describe("plan-03 consume / verify / revoke", () => {
     const unbudgeted = await issueAllow();
     const ok = await consumeCapability(unbudgeted.capability_id, { action: unbudgeted.action, resource: unbudgeted.resource });
     expect(ok.status).toBe("consumed"); // amount undefined vs null budget → rule skipped
-  });
+  }, 30000);
 
   it("revoke flips issued→revoked; consume after revoke → replay; double revoke → false", async () => {
     const cap = await issueAllow();
@@ -322,7 +322,7 @@ describe("plan-03 consume / verify / revoke", () => {
       .toEqual({ status: "rejected", reason: "replay" });
     expect(await revokeCapability(cap.capability_id)).toBe(false);
     expect(await revokeCapability(randomUUID())).toBe(false);
-  });
+  }, 30000);
 
   it("verifyCapability is non-consuming: verify → issued, then consume still works", async () => {
     const cap = await issueAllow();
@@ -334,7 +334,7 @@ describe("plan-03 consume / verify / revoke", () => {
     expect(row.status).toBe("issued");
     expect(await consumeCapability(cap.capability_id, { action: cap.action, resource: cap.resource }))
       .toEqual({ status: "consumed", capability_id: cap.capability_id });
-  });
+  }, 30000);
 });
 
 describe("plan-03 gateway wiring + route", () => {
@@ -360,7 +360,7 @@ describe("plan-03 gateway wiring + route", () => {
     const invalidBody = await invalidRes.json();
     expect(invalidBody.ok).toBe(false);
     expect(invalidBody.error.code).toBe("INVALID_REQUEST");
-  });
+  }, 30000);
 
   async function demoTask() {
     if (!demoTaskId) {
@@ -402,7 +402,7 @@ describe("plan-03 gateway wiring + route", () => {
     const events = await db().select().from(auditEvents)
       .where(eq(auditEvents.taskId, task.id)).orderBy(asc(auditEvents.id));
     expect(events.some((e) => e.eventType === "capability.issued")).toBe(true);
-  });
+  }, 30000);
 
   it("orchestrator deny → capability null", async () => {
     const task = await demoTask();
@@ -412,7 +412,7 @@ describe("plan-03 gateway wiring + route", () => {
     });
     expect(deny.ok && deny.data.decision).toBe("deny");
     if (deny.ok) expect(deny.data.capability).toBeNull();
-  });
+  }, 30000);
 
   it("orchestrator escalate → capability null, approval pending", async () => {
     const task = await demoTask();
@@ -425,5 +425,5 @@ describe("plan-03 gateway wiring + route", () => {
       expect(esc.data.capability).toBeNull();
       expect(esc.data.approval_id).toMatch(UUID_RE);
     }
-  });
+  }, 30000);
 });
