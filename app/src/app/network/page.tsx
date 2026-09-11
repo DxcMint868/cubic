@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import AgentGraph from "@/components/AgentGraph";
-import Logo from "@/components/Logo";
 import MacWindow from "@/components/MacWindow";
+import SiteHeader from "@/components/SiteHeader";
 import { MOCK_AGENTS } from "@/data/agents";
 
 const STATS = [
@@ -49,30 +48,7 @@ export default function NetworkPage() {
         flexDirection: "column",
       }}
     >
-      <header className="site-header">
-        <Link href="/" style={{ textDecoration: "none" }}>
-          <Logo fontSize={24} />
-        </Link>
-
-        <nav className="mono">
-          <Link href="/" className="link">
-            PRODUCT
-          </Link>
-          <Link
-            href="/network"
-            style={{ color: "#fff", textDecoration: "none" }}
-          >
-            NETWORK
-          </Link>
-          <a href="#" className="link">
-            DOCS
-          </a>
-        </nav>
-
-        <a href="#" className="btn-outline">
-          GET ACCESS
-        </a>
-      </header>
+      <SiteHeader active="NETWORK" />
 
       <div className="section-pad" style={{ paddingBottom: 0 }}>
         <p

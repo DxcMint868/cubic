@@ -1,17 +1,11 @@
-import Link from "next/link";
 import DetailsSection from "@/components/DetailsSection";
 import HeroCopy from "@/components/HeroCopy";
-import Logo from "@/components/Logo";
 import Manifesto from "@/components/Manifesto";
 import NetworkCanvas from "@/components/NetworkCanvas";
 import PartnerMarquee from "@/components/PartnerMarquee";
+import SiteHeader from "@/components/SiteHeader";
 import TeamSection from "@/components/TeamSection";
 
-const headerNav = [
-  { label: "PRODUCT", href: "/" },
-  { label: "NETWORK", href: "/network" },
-  { label: "DOCS", href: "#" },
-];
 const footerLinks = ["GITHUB", "DOCS", "CONTACT"];
 
 export default function Home() {
@@ -24,29 +18,7 @@ export default function Home() {
         flexDirection: "column",
       }}
     >
-      <header className="site-header">
-        <a href="#" style={{ textDecoration: "none" }}>
-          <Logo fontSize={24} />
-        </a>
-
-        <nav className="mono">
-          {headerNav.map((item) =>
-            item.href.startsWith("/") ? (
-              <Link key={item.label} href={item.href} className="link">
-                {item.label}
-              </Link>
-            ) : (
-              <a key={item.label} href={item.href} className="link">
-                {item.label}
-              </a>
-            )
-          )}
-        </nav>
-
-        <a href="#" className="btn-outline">
-          GET ACCESS
-        </a>
-      </header>
+      <SiteHeader />
 
       <div className="hero">
         <section className="hero-copy">

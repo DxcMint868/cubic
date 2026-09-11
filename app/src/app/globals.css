@@ -261,6 +261,50 @@ body {
   }
 }
 
+.console-wrap {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 32px;
+  align-items: start;
+  flex: 1;
+}
+
+.console-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 82px;
+}
+
+.console-body {
+  min-width: 0;
+}
+
+.console-cards {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+@media (max-width: 1024px) {
+  .console-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .console-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .console-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .agent-grid {
   margin-top: 5vh;
   display: grid;
