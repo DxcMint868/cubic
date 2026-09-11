@@ -5,7 +5,7 @@ You are implementing exactly ONE plan of the Cubic MVP:
 You are already on branch `plan-09` in your assigned working directory. Do not switch plans, do not implement other plans' scope, do not touch main.
 
 READ FIRST, in this order:
-1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it)
+1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it). FIRST THING in your worktree, index it for GitNexus: `npx gitnexus analyze $(git rev-parse --show-toplevel)` — plain `npx gitnexus analyze` only works in the home repo, never inside a worktree.
 2. `DESIGN.md` — **MANDATORY before any UI work**: monochrome only, `MacWindow` reuse for panel chrome, `.mono` for technical text, Darker Grotesque for display, outlined-square motif. No color accents, no new design language.
 3. `PROJECT.md` — skim §10 Global Agent Network, §17 demo narrative
 4. `MEMORY.md` (read-only for you)

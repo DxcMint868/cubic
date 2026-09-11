@@ -29,8 +29,8 @@ Hard rules: never launch a wave before the previous wave is fully merged; max 2 
 
 ## Per-wave loop
 
-1. Orchestrator preps each worktree: `git worktree add $WT/plan-XX -b plan-XX main` (fresh off latest main), `pnpm install` at its root, copies `app/.env.local` from the home repo.
-2. You open each worktree dir (`$WT/plan-XX`, visible in OpenChamber's sidebar) in your agent tool and paste `.agents/dispatch/plan-XX.md` verbatim. One agent per worktree; launch a wave's two agents close together.
+1. Orchestrator preps each worktree: `git worktree add $WT/plan-XX -b plan-XX main` (fresh off latest main), `pnpm install` at its root, copies `app/.env.local` from the home repo, and indexes it for GitNexus (`npx gitnexus analyze $WT/plan-XX`).
+2. You open each worktree dir (`$WT/plan-XX`, visible in OpenChamber's sidebar) in your agent tool and paste `.agents/dispatch/plan-XX.md` verbatim. One agent per worktree; launch a wave's two agents close together. Every agent re-runs `npx gitnexus analyze $(git rev-parse --show-toplevel)` first thing (mandated in its dispatch prompt) — plain `npx gitnexus analyze` only works in the home repo, never inside a worktree; without the explicit path all later GitNexus commands fail.
 3. Each agent implements, ticks its ACs, runs its own council reviews during the work and the `contract-reviewer` gate before reporting done (both mandated in every dispatch prompt), commits to its branch, and ends with a final report including the gate verdict. Agents commit inside their own worktree — never onto `main` directly.
 4. You ping the orchestrator: `plan-XX done` (paste the final report if the agent isn't visible to the orchestrator).
 5. Orchestrator verifies in the branch (`pnpm typecheck && pnpm lint && pnpm test`), independently re-runs the `contract-reviewer` gate (the agent's self-gate does not replace the merger's), merges into `main` only on MERGE (parallel waves: lower plan number first, rebases the second if needed), folds spike findings into `MEMORY.md`, deletes temp worktrees, preps the next wave.

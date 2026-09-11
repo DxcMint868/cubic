@@ -5,7 +5,7 @@ You are implementing exactly ONE plan of the Cubic MVP:
 You are already on branch `plan-10` in your assigned working directory. Do not switch plans, do not implement other plans' scope, do not touch main. You are the last agent in the build sequence — everything else is merged.
 
 READ FIRST, in this order:
-1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it)
+1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it). FIRST THING in your worktree, index it for GitNexus: `npx gitnexus analyze $(git rev-parse --show-toplevel)` — plain `npx gitnexus analyze` only works in the home repo, never inside a worktree.
 2. `PROJECT.md` — §17 demo narrative (your beats), §18 MVP scope
 3. `MEMORY.md` (read-only until your final task)
 4. `.agents/plans/plan-00-architecture.md` — §C runtime flow, §D failure flows, §N demo sequence. Canonical.

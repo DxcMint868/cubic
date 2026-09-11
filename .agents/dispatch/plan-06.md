@@ -5,7 +5,7 @@ You are implementing exactly ONE plan of the Cubic MVP:
 You are already on branch `plan-06` in your assigned working directory. Do not switch plans, do not implement other plans' scope, do not touch main. A sibling agent is simultaneously implementing plan-05 (Hedera x402) on its own branch — stay in your fence and you will not collide.
 
 READ FIRST, in this order:
-1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it)
+1. `AGENTS.md` (repo rules — includes GitNexus: impact analysis before editing symbols, detect_changes before committing; if the index is stale or errors, note it and continue, don't block on it). FIRST THING in your worktree, index it for GitNexus: `npx gitnexus analyze $(git rev-parse --show-toplevel)` — plain `npx gitnexus analyze` only works in the home repo, never inside a worktree.
 2. `PROJECT.md` — skim §8 Ledger role, §15 Ledger bounty requirements, §18 MVP scope
 3. `MEMORY.md` (read-only for you)
 4. `.agents/plans/plan-00-architecture.md` — shared contracts (§E, §F, §I Ledger boundary). Canonical; never redefine them.
