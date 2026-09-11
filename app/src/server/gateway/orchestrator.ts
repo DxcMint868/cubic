@@ -4,24 +4,15 @@ import { config } from "../config";
 import { db } from "../db/client";
 import { decisions, intents, policies } from "../db/schema";
 import { emit } from "../events/bus";
-import type { ApiErrorCode, Reason, RiskClass, ToolCall } from "../domain";
+import type { ApiErrorCode, IssuedCapability, Reason, RiskClass, ToolCall } from "../domain";
+import { canonicalize, issueCapability } from "../capability/issue";
 import { GatewayError, ingest } from "./ingest";
 import { normalizeIntent } from "./normalize";
 import { getContextProvider } from "./context/provider";
 import { getApprovalProvider } from "./approval/provider";
 import { evaluate, selectPolicy, type Rule } from "./policy/engine";
 
-// plan-03's canonicalize (recursive key sort, no spaces) — reused here for the facts snapshot hash.
-function canonicalize(v: unknown): string {
-  if (Array.isArray(v)) return "[" + v.map(canonicalize).join(",") + "]";
-  if (v && typeof v === "object") {
-    return "{" + Object.keys(v as Record<string, unknown>).sort()
-      .map((k) => JSON.stringify(k) + ":" + canonicalize((v as Record<string, unknown>)[k])).join(",") + "}";
-  }
-  return JSON.stringify(v);
-}
-
-// plan-00 §G tool-call shape; stages capability/payment/execution/payment_required stay null until their plans land.
+// plan-00 §G tool-call shape; payment/execution/payment_required stay null until their plans land.
 export interface ToolCallData {
   intent_id: string;
   decision: "allow" | "deny" | "escalate";
@@ -31,7 +22,7 @@ export interface ToolCallData {
   risk_score: number;
   approval_id: string | null;
   payment_required: null;
-  capability: null;
+  capability: IssuedCapability | null;
   payment: null;
   execution: null;
 }
@@ -40,14 +31,21 @@ export type ToolCallOutcome =
   | { ok: true; data: ToolCallData }
   | { ok: false; error: { code: ApiErrorCode; message: string } };
 
-async function loadPolicyRules(tenantId: string, policyName: string): Promise<Rule[]> {
+// Exported for plan-06's approval-resolve route: reload the exact policy document
+// for an escalated decision, re-synthesize the DecisionResult from the persisted
+// decision row, and call issueCapability (its escalate gate checks the approval).
+export async function loadPolicyDocument(
+  tenantId: string,
+  policyName: string,
+): Promise<{ name: string; version: number; rules: Rule[] }> {
   const [row] = await db()
     .select()
     .from(policies)
     .where(and(eq(policies.tenantId, tenantId), eq(policies.name, policyName)))
     .orderBy(desc(policies.version))
     .limit(1);
-  return (row?.rules ?? []) as Rule[];
+  if (!row) return { name: policyName, version: 0, rules: [] };
+  return { name: row.name, version: row.version, rules: (row.rules ?? []) as Rule[] };
 }
 
 export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
@@ -75,8 +73,8 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
     );
 
     const policyName = selectPolicy(normalized);
-    const policyRules = await loadPolicyRules(ingested.tenantId, policyName);
-    const result = evaluate(normalized, facts, policyRules, policyName);
+    const policyDoc = await loadPolicyDocument(ingested.tenantId, policyName);
+    const result = evaluate(normalized, facts, policyDoc.rules, policyName);
 
     const snapshotHash = createHash("sha256").update(canonicalize(facts)).digest("hex");
     const [decisionRow] = await db()
@@ -187,7 +185,21 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
       return { ok: true, data };
     }
 
-    // allow — handoff; plan-03 adds capability issuance, plan-04 execution.
+    // allow — issue the scoped capability (never a credential). plan-04 adds execution.
+    // (escalate issuance lives in issueCapability's approval gate — plan-06's
+    // resolve route calls it once the approval is approved.)
+    data.capability = await issueCapability({
+      decision: result,
+      decisionId: decisionRow.id,
+      intent: {
+        tool: normalized.tool,
+        action: normalized.action,
+        resource: normalized.resource,
+        amount_usd_cents: normalized.amount_usd_cents,
+        agent_key: ingested.agent.agentKey,
+      },
+      policy: policyDoc,
+    });
     return { ok: true, data };
   } catch (err) {
     if (err instanceof GatewayError) {
