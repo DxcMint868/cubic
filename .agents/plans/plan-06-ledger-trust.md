@@ -45,12 +45,37 @@ export interface SecretProtector {
 
 ## Acceptance criteria
 
-- [ ] Full chain test: `github.merge_pull_request` → `capability.escalated` + `ledger.approval.requested` (`provider:"dev"`) → resolve approved → `ledger.approval.completed` → `capability.issued` → `tool.execution.completed` — all visible in one trace.
-- [ ] Rejected approval → no capability, no execution; trace shows `ledger.approval.completed` with `outcome:"rejected"`.
-- [ ] Dev-provider events all carry `provider:"dev"` (canary assertion); no doc string claims dev == hardware.
-- [ ] If the spike succeeded: a runnable script demonstrates ring init + `protect`/`use` round-trip; findings recorded in this plan file. If not: hardware path marked blocked in docs + plan file.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green (keyring tests skip cleanly when wallet-cli is unavailable).
+- [x] Full chain test: `github.merge_pull_request` → `capability.escalated` + `ledger.approval.requested` (`provider:"dev"`) → resolve approved → `ledger.approval.completed` → `capability.issued` → `tool.execution.completed` — all visible in one trace. (`app/tests/ledger.test.ts` full-chain test asserts the exact 9-event order + trace-route visibility.)
+- [x] Rejected approval → no capability, no execution; trace shows `ledger.approval.completed` with `outcome:"rejected"`.
+- [x] Dev-provider events all carry `provider:"dev"` (canary assertion); no doc string claims dev == hardware (`docs/ledger.md` states the opposite explicitly).
+- [x] If the spike succeeded: a runnable script demonstrates ring init + `protect`/`use` round-trip; findings recorded in this plan file. If not: hardware path marked blocked in docs + plan file. → **Blocked branch taken**: no Ledger device on this host; findings + verdict recorded above and in `docs/ledger.md`; ring round-trip tests exist and skip cleanly (`ringProvisioned()` probe).
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green (keyring tests skip cleanly when wallet-cli is unavailable). Note: `tests/graph.test.ts` (plan-07's file, untouched here) has 2 pre-existing 5s-timeout flakes that fail identically with this plan's changes stashed — verified not caused by plan-06.
 
 ## Out of scope
 
 A full secret-management product; USB-required flows on hosts without devices; touching `gateway/approval/provider.ts` (plan-02 owns it).
+
+## Spike findings (2026-09-10, macOS host)
+
+Install (verified working):
+
+```bash
+npm i -g @ledgerhq/wallet-cli   # also pnpm add -g / yarn global add / bun add -g
+wallet-cli --version            # → wallet-cli v2.1.0
+```
+
+Pinned subcommands (from `wallet-cli ring --help`, v2.1.0):
+
+- `wallet-cli ring init` — one-time provisioning; **device required**; password read from `WALLET_PASS` when no TTY (docs: `WALLET_PASS=$(security find-generic-password -a default -s ledger-wallet-cli -w)` on macOS).
+- `wallet-cli ring encrypt -i <in> -o <out> --key <name>` — AES-256-GCM under a Key Ring key; also accepts stdin/stdout when `-i`/`-o` omitted.
+- `wallet-cli ring decrypt -i <in> -o <out> --key <name>` — inverse.
+- `wallet-cli ring keys` — list keys used on this machine (local cache, no network/device).
+- `wallet-cli ring destroy` — tear down ring + wipe local member credentials.
+
+Observed behavior on this machine:
+
+1. `wallet-cli ring init` with `WALLET_PASS` set → "Generating member credentials…" → "Connect device, open Ledger Sync app" → **fails: "No Ledger device found. Unlock the device and try again."** No physical Ledger is attached, and `ring init` cannot complete without one.
+2. Without a TTY and without `WALLET_PASS`, every `ring` command fails fast with a password-required error.
+3. All commands accept `--output json` (default `human`); JSON shape is `{ok: true, data: ...}` / `{ok: false, error: {kind, name, tag, message}}`.
+
+Verdict: **hardware path BLOCKED on this host** — the CLI is real and installed, but ring provisioning requires a USB Ledger device which is absent. DevProvider remains the default (`LEDGER_PROVIDER=dev`); `LedgerKeyRingProvider` shells out to the pinned subcommands above and throws on any wallet-cli failure (no silent fallback). Tests skip cleanly when the ring is not provisioned. Docs state plainly that dev is not hardware security.
