@@ -129,7 +129,7 @@ export function deriveTasks(events: AuditEvent[]): TaskSummary[] {
         else if (decision === "escalate") task.escalated += 1;
         break;
       }
-      case "payment.completed":
+      case "payment.requested":
         task.payments += 1;
         break;
       case "task.completed": {

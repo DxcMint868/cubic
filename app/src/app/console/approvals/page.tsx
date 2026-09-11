@@ -165,16 +165,15 @@ export default function ConsoleApprovals() {
                       </span>
                       {result.capability ? (
                         <span style={{ color: "#8a8a8a" }}>
-                          CAPABILITY {shortId(result.capability.id, 10)} ·{" "}
-                          {result.capability.status.toUpperCase()}
+                          CAPABILITY {shortId(result.capability.capability_id, 10)} ·{" "}
+                          {result.capability.action} · {result.capability.resource}
                         </span>
                       ) : (
                         <span style={{ color: "#8a8a8a" }}>NO CAPABILITY ISSUED</span>
                       )}
                       {result.execution && (
                         <span style={{ color: "#8a8a8a" }}>
-                          EXECUTION {result.execution.status.toUpperCase()} ·{" "}
-                          {result.execution.executor}
+                          EXECUTION {result.execution.status.toUpperCase()}
                           {result.execution.result_summary
                             ? ` · ${result.execution.result_summary}`
                             : ""}

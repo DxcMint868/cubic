@@ -8,7 +8,7 @@ import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import { useWallet } from "@/components/WalletProvider";
 import { deriveApprovals } from "@/components/console/derive";
-import { getAuditEvents, useApi } from "@/lib/api";
+import { getAuditEventsPaged, useApi } from "@/lib/api";
 
 export default function ConsoleLayout({
   children,
@@ -18,7 +18,7 @@ export default function ConsoleLayout({
   const pathname = usePathname();
   const { address, connect } = useWallet();
   const approvals = useApi("console-layout-approvals", () =>
-    getAuditEvents({ limit: 100 }),
+    getAuditEventsPaged({ maxPages: 3 }),
   );
   const pendingApprovals = useMemo(
     () => deriveApprovals(approvals.data ?? []).pending.length,

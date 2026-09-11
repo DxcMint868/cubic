@@ -231,15 +231,9 @@ function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number })
             <div key={approval.id} style={{ display: "grid", gap: 10 }}>
               <KV
                 k="PROVIDER"
-                v={
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                    <ProviderBadge provider={approval.provider} />
-                    <span className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>
-                      {approval.type.toUpperCase()}
-                    </span>
-                  </span>
-                }
+                v={<ProviderBadge provider={approval.provider} />}
               />
+              <KV k="TYPE" v={approval.type.toUpperCase()} />
               <KV k="OUTCOME" v={approval.status.toUpperCase()} />
               <KV k="REQUESTED" v={fmtDateTime(approval.requested_at)} />
               <KV k="COMPLETED" v={fmtDateTime(approval.completed_at)} />

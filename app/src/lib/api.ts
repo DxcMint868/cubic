@@ -177,15 +177,33 @@ export interface NetworkStats {
   payments_completed: number;
 }
 
+export interface ResolveCapability {
+  capability_id: string;
+  subject: string;
+  action: string;
+  resource: string;
+  constraints: Record<string, unknown>;
+  budget_usd_cents: number | null;
+  expires_at: string;
+  nonce: string;
+  policy_hash: string;
+}
+
+export interface ResolveExecution {
+  execution_id: string;
+  status: "succeeded" | "failed";
+  result_summary: string | null;
+}
+
 export interface ResolveApprovalResult {
   decision?: string;
   approval_id?: string;
   approval_outcome?: string;
   intent_id?: string;
   payment_required?: unknown;
-  capability: TraceCapability | null;
+  capability: ResolveCapability | null;
   payment: unknown;
-  execution: TraceExecution | null;
+  execution: ResolveExecution | null;
 }
 
 export function getAuditEvents(
