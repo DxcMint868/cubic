@@ -1,49 +1,34 @@
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { config } from "../../config";
 import { db } from "../../db/client";
-import { agents, capabilities, decisions, intents, payments, tasks } from "../../db/schema";
-import type { Facts, RiskClass } from "../../domain";
+import { agents } from "../../db/schema";
+import type { Facts } from "../../domain";
+import { GraphContextProvider } from "./graphProvider";
+import { baseFacts, type ContextProvider, type FactsCtx, type FactsIntentRef } from "./base";
 
-export interface FactsIntentRef {
-  taskId: string;
-  tool: string;
-}
-
-export interface FactsCtx {
-  agentId: string;
-  toolRow: { defaultRiskClass: RiskClass } | null;
-}
-
-export interface ContextProvider {
-  getFacts(intent: FactsIntentRef, ctx: FactsCtx): Promise<Facts>;
-}
+export type { ContextProvider, FactsCtx, FactsIntentRef } from "./base";
+export { baseFacts } from "./base";
 
 export class StaticContextProvider implements ContextProvider {
   async getFacts(intent: FactsIntentRef, ctx: FactsCtx): Promise<Facts> {
-    const [agent] = await db().select().from(agents).where(eq(agents.id, ctx.agentId));
-    if (!agent) throw new Error(`context: agent row missing ${ctx.agentId}`);
-    const [task] = await db().select().from(tasks).where(eq(tasks.id, intent.taskId));
-    if (!task) throw new Error(`context: task row missing ${intent.taskId}`);
-
-    // plan-02 EXACT spent query: completed payments joined capability → decision → intent → task.
-    const spent = await db()
-      .select({ s: sql<number>`coalesce(sum(${payments.amountUsdCents}),0)` })
-      .from(payments)
-      .innerJoin(capabilities, eq(payments.capabilityId, capabilities.id))
-      .innerJoin(decisions, eq(capabilities.decisionId, decisions.id))
-      .innerJoin(intents, eq(decisions.intentId, intents.id))
-      .where(and(eq(intents.taskId, intent.taskId), eq(payments.status, "completed")));
-
-    return {
-      agent_status: agent.status as Facts["agent_status"],
-      agent_reputation: 0.95, // static until plan-07 wires the real reputation source
-      tool_default_risk: (ctx.toolRow?.defaultRiskClass ?? "medium") as RiskClass,
-      task_budget_usd_cents: task.budgetUsdCents,
-      budget_spent_usd_cents: Number(spent[0]?.s ?? 0),
-    };
+    return baseFacts(intent, ctx, 0.95); // static reputation: default until the Graph supplies one
   }
 }
 
-let active: ContextProvider = new StaticContextProvider();
+// plan-07 EXACT selection: config().AGENT0_SUBGRAPH_URL is set AND
+// agent.erc8004_identity != null → GraphContextProvider; otherwise
+// StaticContextProvider (0.95). No other changes to plan-02's pipeline.
+export class AutoContextProvider implements ContextProvider {
+  async getFacts(intent: FactsIntentRef, ctx: FactsCtx): Promise<Facts> {
+    const [agent] = await db().select().from(agents).where(eq(agents.id, ctx.agentId));
+    if (agent?.erc8004Identity != null && config().AGENT0_SUBGRAPH_URL) {
+      return new GraphContextProvider().getFacts(intent, ctx);
+    }
+    return new StaticContextProvider().getFacts(intent, ctx);
+  }
+}
+
+let active: ContextProvider = new AutoContextProvider();
 
 export function setContextProvider(provider: ContextProvider): void {
   active = provider;
