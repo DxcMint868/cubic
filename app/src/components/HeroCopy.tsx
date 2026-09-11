@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Logo from "@/components/Logo";
+import { useWallet } from "@/components/WalletProvider";
 
 const PIPELINE = "intent → policy → capability → execution";
 const TYPE_MS = 34;
@@ -35,6 +37,7 @@ export default function HeroCopy() {
   const [modelText, setModelText] = useState(MODELS[0]);
   const [nextModel, setNextModel] = useState(1);
   const [phase, setPhase] = useState<"hold" | "delete" | "type">("hold");
+  const { address, connect } = useWallet();
 
   useEffect(() => {
     if (typed >= PIPELINE.length) return;
@@ -141,11 +144,58 @@ export default function HeroCopy() {
 
       <div
         style={{
-          marginTop: 44,
+          marginTop: 34,
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        {address ? (
+          <Link
+            href="/console"
+            className="mono"
+            style={{
+              display: "inline-block",
+              padding: "12px 26px",
+              background: "#f4f4f4",
+              border: "1px solid #f4f4f4",
+              color: "#000",
+              fontSize: 11,
+              letterSpacing: "0.14em",
+              textDecoration: "none",
+            }}
+          >
+            ENTER CONSOLE →
+          </Link>
+        ) : (
+          <button
+            onClick={connect}
+            className="mono"
+            style={{
+              cursor: "pointer",
+              padding: "12px 26px",
+              background: "#f4f4f4",
+              border: "1px solid #f4f4f4",
+              color: "#000",
+              fontSize: 11,
+              letterSpacing: "0.14em",
+            }}
+          >
+            CONNECT WALLET
+          </button>
+        )}
+        <Link href="/network" className="btn-outline mono" style={{ padding: "12px 26px" }}>
+          VIEW NETWORK
+        </Link>
+      </div>
+
+      <div
+        style={{
+          marginTop: 38,
           paddingTop: 26,
           borderTop: "1px solid rgba(255,255,255,0.1)",
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(104px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
           gap: "22px 28px",
           maxWidth: 560,
         }}

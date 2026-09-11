@@ -54,7 +54,7 @@ export default function Manifesto() {
     <p
       ref={ref}
       style={{
-        maxWidth: 1080,
+        maxWidth: "min(1080px, 100%)",
         fontSize: "clamp(26px, 3.2vw, 46px)",
         fontWeight: 700,
         letterSpacing: "-0.02em",

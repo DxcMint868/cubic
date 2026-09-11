@@ -48,13 +48,9 @@ export default function TeamSection() {
       id="team"
       ref={ref}
       style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(340px, 5fr) 6fr",
-        gap: 72,
-        padding: "14vh 7vw",
         borderTop: "1px solid rgba(255,255,255,0.07)",
-        alignItems: "center",
       }}
+      className="team-grid section-pad"
     >
       <div
         style={{

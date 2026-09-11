@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Darker_Grotesque } from "next/font/google";
+import { WalletProvider } from "@/components/WalletProvider";
 import "./globals.css";
 
 const darkerGrotesque = Darker_Grotesque({
@@ -20,7 +21,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={darkerGrotesque.className}>{children}</body>
+      <body className={darkerGrotesque.className}>
+        <WalletProvider>{children}</WalletProvider>
+      </body>
     </html>
   );
 }
