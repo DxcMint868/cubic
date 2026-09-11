@@ -110,7 +110,7 @@ evaluate(intent: NormalizedIntent, facts: Facts, policyRules: Rule[]): DecisionR
 
 ## Acceptance criteria
 
-- [ ] Vitest table passes exactly (via `runToolCall`, seed fixtures, reputation injected by overriding `StaticContextProvider` with a test double; empty-rules test calls `evaluate()` directly with `rules: []`):
+- [x] Vitest table passes exactly (via `runToolCall`, seed fixtures, reputation injected by overriding `StaticContextProvider` with a test double; empty-rules test calls `evaluate()` directly with `rules: []`):
 
 | # | tool + arguments | reputation | expected decision / matched_rule_id / first reason code |
 |---|---|---|---|
@@ -124,11 +124,11 @@ evaluate(intent: NormalizedIntent, facts: Facts, policyRules: Rule[]): DecisionR
 | 8 | `scanner.scan {target:"acme/backend#421", purchase:true, price_usd_cents:25}` budget 50, spent 0 | 0.95 | allow (payment-v1 / default-allow) |
 | 9 | same as 8 but task budget 10 | 0.95 | deny / budget / budget_exceeded |
 
-- [ ] Purity test: case 1 twice → byte-identical `DecisionResult` JSON; with `LLM_INTENT_PROVIDER` unset, no network calls (mock fetch, assert zero calls).
-- [ ] Escalate path leaves a pending `approvals` row (`provider:"dev"`) and emits BOTH `capability.escalated` AND `ledger.approval.requested`.
-- [ ] `GET /api/audit/trace/[taskId]` returns the plan-00 §G shape; every `decision` object in `chain` includes `matched_rule_id` (read from the `decisions` row).
-- [ ] `curl -s -X POST localhost:3000/api/gateway/tool-call -H 'content-type: application/json' -d '{"agent_key":"agent:8472","tool":"github.get_pull_request","arguments":{"repo":"acme/backend","pr":421}}'` returns case-1 allow; the `.env.production` variant returns case-3 deny.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green.
+- [x] Purity test: case 1 twice → byte-identical `DecisionResult` JSON; with `LLM_INTENT_PROVIDER` unset, no network calls (mock fetch, assert zero calls).
+- [x] Escalate path leaves a pending `approvals` row (`provider:"dev"`) and emits BOTH `capability.escalated` AND `ledger.approval.requested`.
+- [x] `GET /api/audit/trace/[taskId]` returns the plan-00 §G shape; every `decision` object in `chain` includes `matched_rule_id` (read from the `decisions` row).
+- [x] `curl -s -X POST localhost:3000/api/gateway/tool-call -H 'content-type: application/json' -d '{"agent_key":"agent:8472","tool":"github.get_pull_request","arguments":{"repo":"acme/backend","pr":421}}'` returns case-1 allow; the `.env.production` variant returns case-3 deny.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green.
 
 ## Out of scope
 
