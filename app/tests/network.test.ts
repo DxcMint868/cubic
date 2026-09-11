@@ -515,6 +515,12 @@ describe("plan-08 swarm", () => {
           : [];
         const sdids = sdecs.map((d) => d.id);
         if (sdids.length) {
+          const scaps = await db().select().from(capabilities).where(inArray(capabilities.decisionId, sdids));
+          const scids = scaps.map((c) => c.id);
+          if (scids.length) {
+            await db().delete(executions).where(inArray(executions.capabilityId, scids));
+            await db().delete(payments).where(inArray(payments.capabilityId, scids));
+          }
           await db().delete(approvals).where(inArray(approvals.decisionId, sdids));
           await db().delete(capabilities).where(inArray(capabilities.decisionId, sdids));
         }

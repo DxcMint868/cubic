@@ -82,13 +82,13 @@ task_complete             → task.complete
 
 ## Acceptance criteria
 
-- [ ] One allowed `github.get_pull_request` call produces the complete chain in `/api/audit/trace/[taskId]`: intent → decision → capability → execution, with `tool.execution.started` + `tool.execution.completed` and `mode:"mock"` visible.
-- [ ] Scanner executor returns a deterministic report over a real HTTP hop with `report_id` matching `^rpt_[0-9a-f]{8}$`; execution consumes the capability exactly once.
-- [ ] A forced-402 stub executor returns `{status:"payment_required"}` → response `data.payment_required` is set, NO `executions` row, NO `capability.consumed` event, capability still `issued`.
-- [ ] In-process MCP client lists the 5 tools; `scanner_scan` produces the identical event chain shape as HTTP ingest.
-- [ ] Failing executor → `tool.execution.failed`, `executions.status = 'failed'`, capability not reusable.
-- [ ] `task.complete` → task row `completed`, `task.completed` event.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green.
+- [x] One allowed `github.get_pull_request` call produces the complete chain in `/api/audit/trace/[taskId]`: intent → decision → capability → execution, with `tool.execution.started` + `tool.execution.completed` and `mode:"mock"` visible.
+- [x] Scanner executor returns a deterministic report over a real HTTP hop with `report_id` matching `^rpt_[0-9a-f]{8}$`; execution consumes the capability exactly once.
+- [x] A forced-402 stub executor returns `{status:"payment_required"}` → response `data.payment_required` is set, NO `executions` row, NO `capability.consumed` event, capability still `issued`.
+- [x] In-process MCP client lists the 5 tools; `scanner_scan` produces the identical event chain shape as HTTP ingest.
+- [x] Failing executor → `tool.execution.failed`, `executions.status = 'failed'`, capability not reusable.
+- [x] `task.complete` → task row `completed`, `task.completed` event.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green.
 
 ## Out of scope
 
