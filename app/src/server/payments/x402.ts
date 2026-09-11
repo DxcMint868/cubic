@@ -157,20 +157,6 @@ export async function fetchScannerChallenge(
   return { price_usd_cents: price, challenge: body.error.challenge };
 }
 
-// Settlement refs verified in this process — the scanner serves each settlement
-// at most once. Cross-process restarts lose the guard (documented MVP limit).
-const usedSettlements = new Set<string>();
-const USED_CAP = 1000;
-
-function hasUsedSettlement(ref: string): boolean {
-  return usedSettlements.has(ref);
-}
-
-function markSettlementUsed(ref: string): void {
-  if (usedSettlements.size >= USED_CAP) usedSettlements.clear();
-  usedSettlements.add(ref);
-}
-
 function x402NetworkId(): string {
   return NETWORK_IDS[config().HEDERA_NETWORK];
 }
@@ -212,6 +198,8 @@ export class HederaX402Provider implements PaymentProvider {
     // challengeError guarantees scheme/network/amount/payTo/extra.feePayer —
     // rebuild a complete requirements object for the SDK + facilitator body.
     const raw = input.challenge as Partial<X402Challenge>;
+    const rawExtra = raw.extra ?? {};
+    const feePayer = rawExtra.feePayer ?? "";
     const requirements: X402Challenge = {
       scheme: "exact",
       network: raw.network!,
@@ -219,7 +207,7 @@ export class HederaX402Provider implements PaymentProvider {
       payTo: raw.payTo!,
       maxTimeoutSeconds: raw.maxTimeoutSeconds ?? 300,
       asset: raw.asset ?? "0.0.0",
-      extra: { feePayer: raw.extra?.feePayer!, price_usd_cents: raw.extra?.price_usd_cents ?? input.amount_usd_cents },
+      extra: { feePayer, price_usd_cents: rawExtra.price_usd_cents ?? input.amount_usd_cents },
     };
     try {
       const { createClientHederaSigner, PrivateKey } = await import("@x402/hedera");
@@ -276,7 +264,7 @@ export class HederaX402Provider implements PaymentProvider {
         };
       }
       this.settled.set(settle.transaction, requirements);
-      if (this.settled.size > USED_CAP) {
+      if (this.settled.size > 1000) {
         const oldest = this.settled.keys().next().value;
         if (oldest) this.settled.delete(oldest);
       }
