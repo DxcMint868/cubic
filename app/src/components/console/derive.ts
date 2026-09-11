@@ -59,6 +59,12 @@ export function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+function laterOf(current: string | null, candidate: string): string {
+  const currentTs = parseTs(current)?.getTime() ?? -1;
+  const candidateTs = parseTs(candidate)?.getTime() ?? -1;
+  return candidateTs > currentTs ? candidate : (current ?? candidate);
+}
+
 export interface TaskSummary {
   id: string;
   agentIds: string[];
@@ -100,7 +106,7 @@ export function deriveTasks(events: AuditEvent[]): TaskSummary[] {
       byTask.set(taskId, task);
     }
     task.eventCount += 1;
-    task.lastEventAt = event.created_at;
+    task.lastEventAt = laterOf(task.lastEventAt, event.created_at);
     if (event.agent_id && !task.agentIds.includes(event.agent_id)) {
       task.agentIds.push(event.agent_id);
     }
@@ -189,7 +195,7 @@ export function deriveApprovals(events: AuditEvent[]): {
         intentId: null,
         taskId: null,
         agentId: null,
-        provider: "dev",
+        provider: "—",
         action: "—",
         resource: "—",
         requestedAt: "",
@@ -205,7 +211,9 @@ export function deriveApprovals(events: AuditEvent[]): {
     return item;
   };
 
-  for (const event of events) {
+  const ordered = [...events].sort((a, b) => a.id - b.id);
+
+  for (const event of ordered) {
     const payload = event.payload;
     if (event.event_type === "ledger.approval.requested") {
       const id = asString(payload.approval_id);
@@ -225,6 +233,7 @@ export function deriveApprovals(events: AuditEvent[]): {
       const outcome = asString(payload.outcome);
       item.status = outcome === "approved" ? "approved" : "rejected";
       item.completedAt = event.created_at;
+      item.provider = asString(payload.provider) ?? item.provider;
       if (!item.requestedAt) item.requestedAt = event.created_at;
     } else if (event.event_type === "capability.escalated") {
       const id = asString(payload.approval_id);
@@ -350,7 +359,7 @@ export function derivePolicies(events: AuditEvent[]): PolicyObservation[] {
     if (decision === "allow") item.allow += 1;
     else if (decision === "deny") item.deny += 1;
     else if (decision === "escalate") item.escalate += 1;
-    item.lastSeen = event.created_at;
+    item.lastSeen = laterOf(item.lastSeen, event.created_at);
   }
   return [...byKey.values()].sort((a, b) => b.allow + b.deny + b.escalate - (a.allow + a.deny + a.escalate));
 }
@@ -385,7 +394,7 @@ export function deriveAgents(events: AuditEvent[]): AgentStats[] {
       };
       byId.set(agentId, item);
     }
-    item.lastEventAt = event.created_at;
+    item.lastEventAt = laterOf(item.lastEventAt, event.created_at);
     if (event.task_id && !item.taskIds.includes(event.task_id)) item.taskIds.push(event.task_id);
     if (event.event_type === "intent.created") item.intents += 1;
     if (event.event_type === "policy.evaluated") {

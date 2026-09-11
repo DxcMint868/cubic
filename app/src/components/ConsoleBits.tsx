@@ -213,6 +213,8 @@ export function EmptyState({ children }: { children?: React.ReactNode }) {
 
 export function ProviderBadge({ provider }: { provider: string }) {
   const ledger = provider === "ledger";
+  const dev = provider === "dev";
+  const label = ledger ? "LEDGER" : dev ? "DEV" : provider.toUpperCase() || "—";
   return (
     <span
       className="mono"
@@ -221,14 +223,16 @@ export function ProviderBadge({ provider }: { provider: string }) {
         fontSize: 9.5,
         letterSpacing: "0.14em",
         padding: "3px 8px",
-        border: ledger ? "1px solid #e8e8e8" : "1px solid #3a3a3a",
+        border: `1px ${ledger || dev ? "solid" : "dashed"} ${
+          ledger ? "#e8e8e8" : dev ? "#3a3a3a" : "#3a3a3a"
+        }`,
         background: ledger ? "#e8e8e8" : "transparent",
-        color: ledger ? "#000" : "#8a8a8a",
+        color: ledger ? "#000" : dev ? "#8a8a8a" : "#5a5a5a",
         whiteSpace: "nowrap",
       }}
-      title={ledger ? "Ledger provider" : "Development provider"}
+      title={ledger ? "Ledger provider" : dev ? "Development provider" : "Provider unknown"}
     >
-      {ledger ? "LEDGER" : "DEV"}
+      {label}
     </span>
   );
 }

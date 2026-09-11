@@ -12,11 +12,11 @@ import {
   Tag,
 } from "@/components/ConsoleBits";
 import { deriveApprovals, fmtAge, fmtDateTime, shortId } from "@/components/console/derive";
-import { getAuditEvents, resolveApproval, useApi, type ResolveApprovalResult } from "@/lib/api";
+import { getAuditEventsPaged, resolveApproval, useApi, type ResolveApprovalResult } from "@/lib/api";
 
 export default function ConsoleApprovals() {
   const { data, error, loading, reload } = useApi("console-approvals", () =>
-    getAuditEvents({ limit: 200 }),
+    getAuditEventsPaged({ maxPages: 3 }),
   );
   const { pending, resolved } = useMemo(() => deriveApprovals(data ?? []), [data]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,9 +93,7 @@ export default function ConsoleApprovals() {
       <div style={{ marginTop: 28, display: "grid", gap: 16 }}>
         {pending.length === 0 ? (
           <Panel title="QUEUE — 0 PENDING">
-            <EmptyState>
-              No approvals pending — run the demo agent or the swarm.
-            </EmptyState>
+            <EmptyState />
           </Panel>
         ) : (
           pending.map((approval) => {

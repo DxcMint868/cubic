@@ -12,7 +12,7 @@ import {
   th,
 } from "@/components/ConsoleBits";
 import { derivePayments, fmtDateTime, shortId, usd } from "@/components/console/derive";
-import { getAuditEvents, useApi } from "@/lib/api";
+import { getAuditEventsPaged, useApi } from "@/lib/api";
 
 function StatusTag({ status }: { status: string }) {
   const filled = status === "completed";
@@ -38,7 +38,7 @@ function StatusTag({ status }: { status: string }) {
 
 export default function ConsolePayments() {
   const { data, error, loading, reload } = useApi("console-payments", () =>
-    getAuditEvents({ limit: 200 }),
+    getAuditEventsPaged({ maxPages: 3 }),
   );
   const payments = useMemo(() => derivePayments(data ?? []), [data]);
   const settled = payments.filter((payment) => payment.status === "completed");

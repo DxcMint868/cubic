@@ -10,7 +10,7 @@ import {
 } from "@/components/ConsoleBits";
 import { ProviderBadge } from "@/components/ConsoleBits";
 import { asString, fmtDateTime, shortId, usd } from "@/components/console/derive";
-import { getAuditEvents, getTrace, useApi, type TraceChainEntry } from "@/lib/api";
+import { getAuditEventsPaged, getTrace, useApi, type TraceChainEntry } from "@/lib/api";
 
 interface DecisionData {
   taskId: string;
@@ -47,7 +47,10 @@ export default function DecisionDetail({ decisionId }: { decisionId: string }) {
   const { data, error, loading, reload } = useApi(
     `decision:${decisionId}`,
     async (): Promise<DecisionData | null> => {
-      const events = await getAuditEvents({ limit: 200, eventType: "policy.evaluated" });
+      const events = await getAuditEventsPaged({
+        eventType: "policy.evaluated",
+        maxPages: 5,
+      });
       const match = events.find(
         (event) => asString(event.payload.decision_id) === decisionId,
       );
@@ -100,10 +103,7 @@ export default function DecisionDetail({ decisionId }: { decisionId: string }) {
           {shortId(decisionId, 12)}
         </h1>
         <div style={{ marginTop: 28 }}>
-          <EmptyState>
-            Decision not found in the most recent 200 evaluations — run the demo agent or the
-            swarm.
-          </EmptyState>
+          <EmptyState />
         </div>
       </div>
     );
@@ -179,6 +179,7 @@ export default function DecisionDetail({ decisionId }: { decisionId: string }) {
           }}
         >
           ESCALATED — APPROVAL REQUIRED
+          {reasons.length > 0 ? ` · ${reasons.map((reason) => reason.code).join(" · ")}` : ""}
         </div>
       )}
 

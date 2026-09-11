@@ -14,6 +14,7 @@ import { getAuditEvents, getTrace, useApi, type Trace } from "@/lib/api";
 
 interface AgentData {
   traces: Trace[];
+  totalTasks: number;
   intents: number;
   allowed: number;
   denied: number;
@@ -23,6 +24,8 @@ interface AgentData {
   firstEventAt: string | null;
 }
 
+const TASK_FETCH_LIMIT = 12;
+
 export default function AgentDetail({ agentId }: { agentId: string }) {
   const { data, error, loading, reload } = useApi(`agent:${agentId}`, async (): Promise<AgentData> => {
     const events = await getAuditEvents({ limit: 200 });
@@ -31,19 +34,18 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
     for (const event of mine) {
       if (event.task_id && !taskIds.includes(event.task_id)) taskIds.push(event.task_id);
     }
-    const traces: Trace[] = [];
-    for (const taskId of taskIds) {
-      try {
-        traces.push(await getTrace(taskId));
-      } catch {
-        continue;
-      }
-    }
+    const settled = await Promise.allSettled(
+      taskIds.slice(0, TASK_FETCH_LIMIT).map((taskId) => getTrace(taskId)),
+    );
+    const traces = settled
+      .filter((result): result is PromiseFulfilledResult<Trace> => result.status === "fulfilled")
+      .map((result) => result.value);
     const decisions = mine.filter((event) => event.event_type === "policy.evaluated");
     const count = (decision: string) =>
       decisions.filter((event) => event.payload.decision === decision).length;
     return {
       traces,
+      totalTasks: taskIds.length,
       intents: mine.filter((event) => event.event_type === "intent.created").length,
       allowed: count("allow"),
       denied: count("deny"),
@@ -160,7 +162,13 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
         }}
       >
         {[
-          { value: String(data.traces.length), label: "TASKS" },
+          {
+            value:
+              data.totalTasks > data.traces.length
+                ? `${data.traces.length} / ${data.totalTasks}`
+                : String(data.traces.length),
+            label: "TASKS",
+          },
           { value: String(data.intents), label: "INTENTS" },
           { value: `${data.allowed} / ${data.escalated} / ${data.denied}`, label: "ALLOW / ESC / DENY" },
           { value: String(data.approvals), label: "APPROVALS" },

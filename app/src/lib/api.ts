@@ -205,6 +205,26 @@ export function getTrace(taskId: string): Promise<Trace> {
   return request<Trace>(`/api/audit/trace/${encodeURIComponent(taskId)}`);
 }
 
+export async function getAuditEventsPaged(
+  opts: { eventType?: string; maxPages?: number; pageSize?: number } = {},
+): Promise<AuditEvent[]> {
+  const maxPages = opts.maxPages ?? 5;
+  const pageSize = opts.pageSize ?? 200;
+  const rows: AuditEvent[] = [];
+  let beforeId: number | undefined;
+  for (let page = 0; page < maxPages; page += 1) {
+    const batch = await getAuditEvents({
+      limit: pageSize,
+      eventType: opts.eventType,
+      beforeId,
+    });
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+    beforeId = batch[batch.length - 1].id;
+  }
+  return rows;
+}
+
 export function getNetworkEvents(
   opts: { limit?: number; beforeId?: number } = {},
 ): Promise<NetworkEvent[]> {

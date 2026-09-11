@@ -27,6 +27,7 @@ const ACTION_LEGEND = [
   { label: "AUTHORIZATION · SOLID 2PX", stroke: "solid" },
   { label: "EXECUTION · BOLD", stroke: "solid" },
   { label: "APPROVAL · LONG DASH", stroke: "dashed" },
+  { label: "TASK · HAIRLINE", stroke: "dotted" },
   { label: "PAYMENT · ◆ MARKER", stroke: "solid" },
 ];
 
@@ -180,7 +181,7 @@ export default function NetworkPage() {
           }}
         >
           {connected ? "SSE LIVE — SUBSCRIBED" : streamError?.toUpperCase() ?? "SSE — CONNECTING"}
-          {" · REAL EVENT PIPELINE · SYNTHETIC SWARM ACTIVITY FLAGGED DEMO"}
+          {" · REAL EVENT PIPELINE — SYNTHETIC SWARM AGENTS INCLUDED (DEMO)"}
         </p>
 
         <div

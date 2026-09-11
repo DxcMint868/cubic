@@ -334,6 +334,12 @@ export default function NetworkGraph({
           } else if (pulse.actionClass === "discovery") {
             ctx.setLineDash([1, 2]);
             ctx.lineWidth = 1;
+          } else if (pulse.actionClass === "evaluation") {
+            ctx.setLineDash([]);
+            ctx.lineWidth = 1.5;
+          } else if (pulse.actionClass === "task") {
+            ctx.setLineDash([1, 5]);
+            ctx.lineWidth = 1;
           } else {
             ctx.setLineDash([]);
             ctx.lineWidth = blocked ? 1 : 1.5;

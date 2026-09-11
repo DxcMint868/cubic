@@ -290,6 +290,9 @@ function EventsTab({ trace }: { trace: Trace }) {
   if (trace.events.length === 0) return <EmptyState />;
   return (
     <div style={{ display: "grid", gap: 14 }}>
+      <span className="mono" style={{ fontSize: 9.5, letterSpacing: "0.2em", color: "#5a5a5a" }}>
+        {trace.events.length} AUDIT EVENTS — ORDERED
+      </span>
       {trace.events.map((event, index) => (
         <div
           key={`${event.event_type}-${index}`}
@@ -402,7 +405,7 @@ export default function TraceView({ taskId }: { taskId: string }) {
         <MacWindow
           tabs={[
             { id: "trace", label: "TRACE" },
-            { id: "events", label: `EVENTS · ${trace.events.length}` },
+            { id: "events", label: "EVENTS" },
           ]}
           activeTab={tab}
           onTabChange={setTab}

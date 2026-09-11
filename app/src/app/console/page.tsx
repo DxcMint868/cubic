@@ -32,9 +32,8 @@ export default function ConsoleOverview() {
   const approvals = useMemo(() => deriveApprovals(events), [events]);
   const decisions = useMemo(
     () =>
-      [...events]
+      events
         .filter((event) => event.event_type === "policy.evaluated")
-        .reverse()
         .slice(0, 6),
     [events],
   );
@@ -93,12 +92,7 @@ export default function ConsoleOverview() {
       <div className="console-cards">
         <Panel title={`PENDING APPROVALS — ${counters.pendingApprovals}`}>
           {approvals.pending.length === 0 ? (
-            <p
-              className="mono"
-              style={{ fontSize: 11, letterSpacing: "0.1em", color: "#5a5a5a", lineHeight: 1.9 }}
-            >
-              No approvals pending — run the demo agent or the swarm.
-            </p>
+            <EmptyState />
           ) : (
             <div style={{ display: "grid", gap: 16 }}>
               {approvals.pending.slice(0, 3).map((approval) => (
@@ -126,7 +120,7 @@ export default function ConsoleOverview() {
                     className="mono"
                     style={{ fontSize: 10, letterSpacing: "0.08em", color: "#5a5a5a" }}
                   >
-                    {approval.reasons.join(" · ") || "risk_requires_approval"} ·{" "}
+                    {approval.reasons.join(" · ") || "—"} ·{" "}
                     {fmtAge(approval.requestedAt).toUpperCase()} AGO
                   </div>
                 </div>
@@ -144,12 +138,7 @@ export default function ConsoleOverview() {
 
         <Panel title="RECENT DECISIONS">
           {decisions.length === 0 ? (
-            <p
-              className="mono"
-              style={{ fontSize: 11, letterSpacing: "0.1em", color: "#5a5a5a", lineHeight: 1.9 }}
-            >
-              No decisions yet — run the demo agent or the swarm.
-            </p>
+            <EmptyState />
           ) : (
             <div style={{ display: "grid", gap: 14 }}>
               {decisions.map((event) => {
@@ -175,7 +164,7 @@ export default function ConsoleOverview() {
                         className="mono"
                         style={{ marginTop: 5, fontSize: 9.5, color: "#5a5a5a" }}
                       >
-                        {reasonCodes || "policy_default_allow"}
+                        {reasonCodes || "—"}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
