@@ -136,10 +136,10 @@ export async function emit(input: EmitInput, meta: ProjectionMeta = {}): Promise
 
 ## Acceptance criteria
 
-- [ ] `pnpm --filter app db:generate` produces the initial migration; `db:migrate` applies cleanly — run from a shell WITHOUT `DATABASE_URL` exported (proves `load-env.ts` works; the `.env.local` file is the only source).
-- [ ] `pnpm --filter app test` passes: (a) `config()` with missing `DATABASE_URL` throws containing `DATABASE_URL`; (b) for **all 17 event types**, `emit()` with a valid sample payload persists a row and the envelope validates; (c) invalid payload throws AND writes no row; (d) seed twice → identical demo-tenant counts, and a pre-created foreign tenant (`slug: "test-plan-01"`) with rows **survives**; (e) deleting demo `network_events` by pseudonym leaves a foreign-pseudonym row intact.
-- [ ] With `pnpm dev` running (no env exported in that shell either): `curl -s localhost:3000/api/health` → `{"ok":true,…}`; `curl -s -X POST localhost:3000/api/demo/seed` → `{"ok":true,…}`.
-- [ ] `pnpm typecheck && pnpm lint` green.
+- [x] `pnpm --filter app db:generate` produces the initial migration; `db:migrate` applies cleanly — run from a shell WITHOUT `DATABASE_URL` exported (proves `load-env.ts` works; the `.env.local` file is the only source). *[generate + migrate verified clean against live DB 2026-09-10]*
+- [x] `pnpm --filter app test` passes: (a) `config()` with missing `DATABASE_URL` throws containing `DATABASE_URL`; (b) for **all 17 event types**, `emit()` with a valid sample payload persists a row and the envelope validates; (c) invalid payload throws AND writes no row; (d) seed twice → identical demo-tenant counts, and a pre-created foreign tenant (`slug: "test-plan-01"`) with rows **survives**; (e) deleting demo `network_events` by pseudonym leaves a foreign-pseudonym row intact. *(23/23 verified live 2026-09-10 after orchestrator test fixes: null-safe demoCounts, FK-safe cleanup, 30s timeout)*
+- [x] With `pnpm dev` running (no env exported in that shell either): `curl -s localhost:3000/api/health` → `{"ok":true,…}`; `curl -s -X POST localhost:3000/api/demo/seed` → `{"ok":true,…}`. *(verified live 2026-09-10: health db:up, seed returns agents 1 / tools 6 / policies 3 / tasks 1)*
+- [x] `pnpm typecheck && pnpm lint` green.
 
 ## Out of scope
 
