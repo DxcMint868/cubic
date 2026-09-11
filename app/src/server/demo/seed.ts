@@ -1,5 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
+import { config } from "../config";
 import { db } from "../db/client";
 import {
   tenants, agents, tools, policies, tasks, intents, decisions,
@@ -10,7 +11,7 @@ const withPseudonym = (agentKey: string) =>
   createHash("sha256").update(`${agentKey}|cubic-network-v1`).digest("hex").slice(0, 16);
 
 const fixture = {
-  tenant: { slug: "demo", name: "Cubic Demo" },
+  tenant: { slug: config().DEMO_TENANT_SLUG, name: "Cubic Demo" },
   agents: [{
     agent_key: "agent:8472", name: "deploy-agent", environment: "demo",
     status: "active", erc8004_identity: null,
@@ -25,9 +26,34 @@ const fixture = {
     { name: "task.complete", category: "control", default_risk_class: "low", executor: "task", executor_config: {} },
   ],
   policies: [
-    { name: "default-v1", version: 1, rules: [{ "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }] },
-    { name: "payment-v1", version: 1, rules: [{ "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }] },
-    { name: "production-merge-v1", version: 1, rules: [{ "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }] },
+    {
+      name: "default-v1", version: 1, rules: [
+        { "id": "deny-secret-resources", "type": "resource_class", "match": ["secret"], "decision": "deny", "reason": "secret_resource" },
+        { "id": "deny-cross-task", "type": "resource_class", "match": ["cross_task"], "decision": "deny", "reason": "resource_outside_task" },
+        { "id": "tool-allowlist", "type": "tool_allowlist",
+          "tools": ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"],
+          "decision": "deny", "reason": "tool_not_allowed" },
+        { "id": "reputation-floor", "type": "min_reputation", "min": 0.80, "decision": "escalate", "reason": "reputation_below_threshold" },
+        { "id": "risk-approval", "type": "risk_class", "match": ["high", "critical"], "decision": "escalate", "reason": "risk_requires_approval" },
+        { "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }
+      ],
+    },
+    {
+      name: "payment-v1", version: 1, rules: [
+        { "id": "service-allowlist", "type": "service_allowlist", "services": ["scanner"], "decision": "deny", "reason": "service_not_approved" },
+        { "id": "budget", "type": "budget", "decision": "deny", "reason": "budget_exceeded" },
+        { "id": "reputation-floor", "type": "min_reputation", "min": 0.80, "decision": "escalate", "reason": "reputation_below_threshold" },
+        { "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }
+      ],
+    },
+    {
+      name: "production-merge-v1", version: 1, rules: [
+        { "id": "merge-only", "type": "tool_allowlist", "tools": ["github.merge_pull_request"], "decision": "deny", "reason": "tool_not_allowed" },
+        { "id": "merge-reputation", "type": "min_reputation", "min": 0.90, "decision": "escalate", "reason": "reputation_below_threshold" },
+        { "id": "merge-risk", "type": "risk_class", "match": ["high"], "decision": "escalate", "reason": "risk_requires_approval" },
+        { "id": "default-deny", "type": "default", "decision": "deny", "reason": "policy_default_deny" }
+      ],
+    },
   ],
   tasks: [{
     agent_key: "agent:8472",
@@ -37,10 +63,10 @@ const fixture = {
 } as const;
 
 export async function seed(): Promise<{ agents: number; tools: number; policies: number; tasks: number }> {
-  let [tenant] = await db().select().from(tenants).where(eq(tenants.slug, "demo"));
+  let [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
   if (!tenant) {
     await db().insert(tenants).values({ slug: fixture.tenant.slug, name: fixture.tenant.name }).onConflictDoNothing({ target: tenants.slug });
-    [tenant] = await db().select().from(tenants).where(eq(tenants.slug, "demo"));
+    [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
   }
   if (!tenant) throw new Error("seed: demo tenant missing");
 
@@ -74,6 +100,7 @@ export async function seed(): Promise<{ agents: number; tools: number; policies:
     await db().delete(capabilities).where(inArray(capabilities.decisionId, decisionIds));
   }
   if (intentIds.length) await db().delete(decisions).where(inArray(decisions.intentId, intentIds));
+
   if (agentIds.length) await db().delete(intents).where(inArray(intents.agentId, agentIds));
   await db().delete(tasks).where(eq(tasks.tenantId, tenant.id));
   await db().delete(agents).where(eq(agents.tenantId, tenant.id));

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 const schema = z.object({
   DATABASE_URL: z.string().min(1),
+  DEMO_TENANT_SLUG: z.string().default("demo"),
   LEDGER_PROVIDER: z.enum(["dev", "ledger"]).default("dev"),
   HEDERA_NETWORK: z.enum(["testnet", "mainnet"]).default("testnet"),
   X402_SCANNER_PRICE_CENTS: z.coerce.number().int().default(25),
