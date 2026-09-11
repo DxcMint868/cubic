@@ -52,10 +52,10 @@ export interface Agent0Client {
 
 ## Acceptance criteria
 
-- [ ] A reputation fact obtained through the context provider demonstrably changes a policy decision (the 0.95-allow vs 0.50-escalate test).
-- [ ] Graph outage degrades to neutral facts (0.80) with a logged warning; the gateway never crashes on Graph errors.
-- [ ] The chosen subgraph endpoint + exact GraphQL query are documented in your final report; fixture data is flagged demo and flows through the identical provider interface.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green (network tests use mocks; no live subgraph dependency in the test suite).
+- [x] A reputation fact obtained through the context provider demonstrably changes a policy decision (the 0.95-allow vs 0.50-escalate test).
+- [x] Graph outage degrades to neutral facts (0.80) with a logged warning; the gateway never crashes on Graph errors.
+- [x] The chosen subgraph endpoint + exact GraphQL query are documented in your final report; fixture data is flagged demo and flows through the identical provider interface.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green (network tests use mocks; no live subgraph dependency in the test suite).
 
 ## Out of scope
 
