@@ -106,24 +106,28 @@ beforeAll(async () => {
     return;
   }
   // Operator balance guard: refuse to attempt settlement it cannot cover.
+  // If the mirror itself is unreachable, skip too — never spend unverified.
   const requiredTinybars = 1 * 30_000 * 1e8 / 226_576; // ~13.2M tinybars at the pinned probe rate
   try {
     const res = await fetch(
       `https://testnet.mirrornode.hedera.com/api/v1/accounts/${encodeURIComponent(c.HEDERA_OPERATOR_ID)}?balance=true`,
       { signal: AbortSignal.timeout(5000) },
     );
-    if (res.ok) {
-      const body = (await res.json()) as { balance?: { balance?: number } };
-      const balance = body.balance?.balance ?? 0;
-      if (balance < requiredTinybars) {
-        console.warn(
-          `[x402.live] skipping: operator balance ${balance} tinybars below the required ~${Math.round(requiredTinybars)} (blocked-on-env)`,
-        );
-        return;
-      }
+    if (!res.ok) {
+      console.warn("[x402.live] skipping: mirror balance lookup failed (blocked-on-env)");
+      return;
+    }
+    const body = (await res.json()) as { balance?: { balance?: number } };
+    const balance = body.balance?.balance ?? 0;
+    if (balance < requiredTinybars) {
+      console.warn(
+        `[x402.live] skipping: operator balance ${balance} tinybars below the required ~${Math.round(requiredTinybars)} (blocked-on-env)`,
+      );
+      return;
     }
   } catch {
-    // mirror hiccup: let the run attempt anyway (verifySettlement retries cover lag)
+    console.warn("[x402.live] skipping: mirror balance lookup failed (blocked-on-env)");
+    return;
   }
 
   const [tenant] = await db()

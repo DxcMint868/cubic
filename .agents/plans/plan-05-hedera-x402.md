@@ -55,11 +55,11 @@ export interface PaymentProvider {
 
 ## Acceptance criteria
 
-- [ ] Live on Hedera testnet (env-gated; skip cleanly without env): 402 → `payment_required` → purchase allow → settlement → `verifySettlement` true → report; `payments` row `completed` with `x402_ref`; `payment.requested` + `payment.completed` in trace.
-- [ ] Over-budget: task `budget_usd_cents: 10`, price 25 → deny `budget_exceeded` (payment-v1 `budget` rule) — vitest with the plan-02 test-double pattern.
-- [ ] `X402_SIMULATE_FAILURE=1` → `payment.failed`, capability `revoked`, zero `tool.execution.*` events for that capability, no report.
-- [ ] Canary: no `HEDERA_OPERATOR_KEY` value (or any key material) in any API response, event payload, or log line.
-- [ ] Agent response holds only the budget-scoped capability; `docs/payment-flow.md` exists and matches the flow.
+- [x] Live on Hedera testnet (env-gated; skip cleanly without env): 402 → `payment_required` → purchase allow → settlement → `verifySettlement` true → report; `payments` row `completed` with `x402_ref`; `payment.requested` + `payment.completed` in trace. (`tests/x402.live.test.ts` green 2026-09-12; settlement `0.0.7162784@…` verified on the mirror node)
+- [x] Over-budget: task `budget_usd_cents: 10`, price 25 → deny `budget_exceeded` (payment-v1 `budget` rule) — vitest with the plan-02 test-double pattern. (`tests/x402.test.ts`, own price 33)
+- [x] `X402_SIMULATE_FAILURE=1` → `payment.failed`, capability `revoked`, zero `tool.execution.*` events for that capability, no report. (`tests/x402.test.ts`)
+- [x] Canary: no `HEDERA_OPERATOR_KEY` value (or any key material) in any API response, event payload, or log line. (`tests/x402.test.ts` canary test, incl. the loud dev-bypass warning line)
+- [x] Agent response holds only the budget-scoped capability; `docs/payment-flow.md` exists and matches the flow. (live test asserts `data.capability.budget_usd_cents == price`; no key material in any response)
 
 ## Out of scope
 

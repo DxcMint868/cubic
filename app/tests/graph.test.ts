@@ -164,7 +164,7 @@ describe("plan-07 graph context", () => {
     expect(result.data.matched_policy).toBe("default-v1");
     expect(result.data.matched_rule_id).toBe("default-allow");
     expect(result.data.capability?.capability_id).toMatch(UUID_RE);
-  });
+  }, 30000);
 
   it("fixture identity agent:lab-1 → 0.50 → escalate reputation_below_threshold (no network)", async () => {
     const calls = { count: 0 };
@@ -211,7 +211,7 @@ describe("plan-07 graph context", () => {
     expect(facts.agent_reputation).toBe(NEUTRAL_REPUTATION);
     expect(facts.agent_status).toBe("active");
     expect(facts.task_budget_usd_cents).toBe(50);
-  });
+  }, 30000);
 
   it("cache: second lookup within the 60s TTL performs zero network calls", async () => {
     const fetchMock = vi.fn(

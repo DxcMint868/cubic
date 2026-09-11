@@ -297,8 +297,9 @@ export class HederaX402Provider implements PaymentProvider {
     const [accountId, stamp] = input.settlement_ref.split("@");
     const txId = stamp ? `${accountId}-${stamp.replace(".", "-")}` : input.settlement_ref;
     const url = `${MIRROR_URLS[config().HEDERA_NETWORK]}/api/v1/transactions/${txId}`;
-    // Mirror indexing lags settlement by a few seconds — retry the read.
-    for (let attempt = 0; attempt < 6; attempt++) {
+    // Mirror indexing lags settlement by seconds (observed spikes > 10 s on
+    // testnet) — retry the read generously before giving up.
+    for (let attempt = 0; attempt < 10; attempt++) {
       try {
         const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
         if (res.ok) {
@@ -315,7 +316,7 @@ export class HederaX402Provider implements PaymentProvider {
       } catch {
         // mirror hiccup — retry
       }
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 2000));
     }
     return false;
   }
