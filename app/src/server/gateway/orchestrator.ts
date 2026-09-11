@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { config } from "../config";
 import { db } from "../db/client";
-import { decisions, executions, intents, policies } from "../db/schema";
+import { decisions, executions, intents, policies, tools } from "../db/schema";
 import { emit } from "../events/bus";
-import type { ApiErrorCode, IssuedCapability, Reason, RiskClass, ToolCall } from "../domain";
+import type { ApiErrorCode, DecisionResult, IssuedCapability, NormalizedIntent, Reason, RiskClass, ToolCall } from "../domain";
 import { canonicalize, issueCapability } from "../capability/issue";
 import { consumeCapability } from "../capability/verify";
 import { getExecutor, type ExecutorResult } from "../executors/registry";
@@ -12,6 +12,7 @@ import { GatewayError, ingest } from "./ingest";
 import { normalizeIntent } from "./normalize";
 import { getContextProvider } from "./context/provider";
 import { getApprovalProvider } from "./approval/provider";
+import { ledgerApprovalProvider } from "../ledger/keyring";
 import { evaluate, selectPolicy, type Rule } from "./policy/engine";
 
 // plan-00 §G tool-call shape; payment stays null until plan-05 lands.
@@ -48,6 +49,183 @@ export async function loadPolicyDocument(
     .limit(1);
   if (!row) return { name: policyName, version: 0, rules: [] };
   return { name: row.name, version: row.version, rules: (row.rules ?? []) as Rule[] };
+}
+
+// plan-06: the approval→issuance→execution continuation. Both the allow path
+// of runToolCall and the approval-resolve route (plan-06) run this same phase,
+// so an approved escalation produces exactly the chain a direct allow would.
+export interface ExecutionPhaseInput {
+  tenantId: string;
+  taskId: string;
+  agentId: string;
+  agentKey: string;
+  intentId: string;
+  tool: string;
+  toolRow: typeof tools.$inferSelect | null;
+  normalized: NormalizedIntent;
+  decision: DecisionResult;
+  decisionId: string;
+  policyDoc: { name: string; version: number; rules: unknown[] };
+  args: Record<string, unknown>;
+}
+
+export interface ExecutionPhaseResult {
+  capability: IssuedCapability | null;
+  payment_required: { price_usd_cents: number; challenge: unknown } | null;
+  execution: { execution_id: string; status: "succeeded" | "failed"; result_summary: string | null } | null;
+}
+
+export async function runExecutionPhase(input: ExecutionPhaseInput): Promise<ExecutionPhaseResult> {
+  const { tenantId, taskId, agentId, agentKey, tool, toolRow, normalized } = input;
+  const meta = { agent_key: agentKey, risk_class: normalized.risk_class };
+
+  // The executor lookup happens BEFORE capability issuance so an
+  // unknown-executor tool row can never strand an issued-but-untracked
+  // capability.
+  if (!toolRow) {
+    throw new GatewayError("TOOL_NOT_FOUND", `no tool row for ${tool}`);
+  }
+  const lookup = getExecutor(toolRow);
+  if (!lookup.ok) {
+    throw new GatewayError("TOOL_NOT_FOUND", `no executor registered for tool: ${tool}`);
+  }
+
+  const capability = await issueCapability({
+    decision: input.decision,
+    decisionId: input.decisionId,
+    intent: {
+      tool: normalized.tool,
+      action: normalized.action,
+      resource: normalized.resource,
+      amount_usd_cents: normalized.amount_usd_cents,
+      agent_key: agentKey,
+    },
+    policy: input.policyDoc,
+  });
+
+  // Consume-after-execute is forced by the plan's two hard constraints: a
+  // payment_required outcome must leave the capability issued-but-unconsumed,
+  // and the executions row's "(already returned)" note implies the executor
+  // ran before the row insert. A fresh capability cannot reject here in
+  // practice (issue → consume within one request).
+  const capabilityId = capability.capability_id;
+  const budget = capability.budget_usd_cents;
+
+  let outcome: ExecutorResult | { threw: string };
+  try {
+    outcome = await lookup.executor.execute({
+      capability: {
+        id: capabilityId,
+        action: normalized.action,
+        resource: normalized.resource,
+        budgetUsdCents: budget,
+      },
+      args: input.args,
+    });
+  } catch (err) {
+    outcome = { threw: err instanceof Error ? err.message : String(err) };
+  }
+
+  if (!("threw" in outcome) && "status" in outcome) {
+    // payment_required — the ONLY non-executing path: no executions row, no
+    // consume; the capability stays issued-but-unconsumed and expires.
+    return {
+      capability,
+      payment_required: { price_usd_cents: outcome.price_usd_cents, challenge: outcome.challenge },
+      execution: null,
+    };
+  }
+
+  const consumed = await consumeCapability(capabilityId, {
+    action: normalized.action,
+    resource: normalized.resource,
+    amount: budget ?? undefined,
+  });
+  if (consumed.status === "rejected") {
+    throw new GatewayError("CAPABILITY_REJECTED", `capability rejected: ${consumed.reason}`);
+  }
+
+  const [executionRow] = await db()
+    .insert(executions)
+    .values({
+      capabilityId,
+      tool,
+      status: "running",
+      executor: toolRow.executor,
+    })
+    .returning();
+  await emit(
+    {
+      event_type: "tool.execution.started",
+      tenant_id: tenantId,
+      task_id: taskId,
+      agent_id: agentId,
+      payload: {
+        execution_id: executionRow.id,
+        capability_id: capabilityId,
+        tool,
+        resource: normalized.resource,
+      },
+    },
+    meta,
+  );
+
+  if ("threw" in outcome) {
+    await db()
+      .update(executions)
+      .set({ status: "failed", error: outcome.threw, completedAt: new Date().toISOString() })
+      .where(eq(executions.id, executionRow.id));
+    await emit(
+      {
+        event_type: "tool.execution.failed",
+        tenant_id: tenantId,
+        task_id: taskId,
+        agent_id: agentId,
+        payload: { execution_id: executionRow.id, capability_id: capabilityId, error_code: "EXECUTOR_ERROR" },
+      },
+      meta,
+    );
+    return { capability, payment_required: null, execution: { execution_id: executionRow.id, status: "failed", result_summary: null } };
+  }
+
+  await db()
+    .update(executions)
+    .set({ status: "succeeded", resultSummary: outcome.summary, completedAt: new Date().toISOString() })
+    .where(eq(executions.id, executionRow.id));
+  await emit(
+    {
+      event_type: "tool.execution.completed",
+      tenant_id: tenantId,
+      task_id: taskId,
+      agent_id: agentId,
+      payload: {
+        execution_id: executionRow.id,
+        capability_id: capabilityId,
+        result_summary: outcome.summary,
+      },
+    },
+    meta,
+  );
+
+  // task.complete: the plan's execution-phase bullet — mark the task
+  // completed, emit task.completed, return summary "Task completed".
+  if (normalized.action === "task_complete") {
+    await emit(
+      {
+        event_type: "task.completed",
+        tenant_id: tenantId,
+        task_id: taskId,
+        agent_id: agentId,
+        payload: { task_id: taskId, status: "completed", summary: "Task completed" },
+      },
+      meta,
+    );
+  }
+  return {
+    capability,
+    payment_required: null,
+    execution: { execution_id: executionRow.id, status: "succeeded", result_summary: outcome.summary },
+  };
 }
 
 export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
@@ -145,7 +323,12 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
     }
 
     if (result.decision === "escalate") {
-      const { approval_id } = await getApprovalProvider().request({
+      // plan-06 provider selection: LEDGER_PROVIDER=ledger routes high-risk
+      // approvals through the wallet-cli Key Ring; dev stays the default and
+      // is never described as hardware security.
+      const approvalProvider =
+        config().LEDGER_PROVIDER === "ledger" ? ledgerApprovalProvider() : getApprovalProvider();
+      const { approval_id } = await approvalProvider.request({
         decision_id: decisionRow.id,
         action: normalized.action,
         resource: normalized.resource,
@@ -187,152 +370,25 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
       return { ok: true, data };
     }
 
-    // allow — the plan-04 execution phase. The executor lookup happens BEFORE
-    // capability issuance so an unknown-executor tool row can never strand an
-    // issued-but-untracked capability.
-    if (!ingested.toolRow) {
-      return { ok: false, error: { code: "TOOL_NOT_FOUND", message: `no tool row for ${ingested.intent.tool}` } };
-    }
-    const lookup = getExecutor(ingested.toolRow);
-    if (!lookup.ok) {
-      return {
-        ok: false,
-        error: { code: "TOOL_NOT_FOUND", message: `no executor registered for tool: ${ingested.intent.tool}` },
-      };
-    }
-
-    data.capability = await issueCapability({
+    // allow — the plan-04 execution phase, shared with plan-06's approval
+    // resolution (runExecutionPhase).
+    const phase = await runExecutionPhase({
+      tenantId: ingested.tenantId,
+      taskId: ingested.task.id,
+      agentId: ingested.agent.id,
+      agentKey: ingested.agent.agentKey,
+      intentId: ingested.intent.id,
+      tool: ingested.intent.tool,
+      toolRow: ingested.toolRow,
+      normalized,
       decision: result,
       decisionId: decisionRow.id,
-      intent: {
-        tool: normalized.tool,
-        action: normalized.action,
-        resource: normalized.resource,
-        amount_usd_cents: normalized.amount_usd_cents,
-        agent_key: ingested.agent.agentKey,
-      },
-      policy: policyDoc,
+      policyDoc,
+      args: input.arguments ?? {},
     });
-
-    // Consume-after-execute is forced by the plan's two hard constraints: a
-    // payment_required outcome must leave the capability issued-but-unconsumed,
-    // and the executions row's "(already returned)" note implies the executor
-    // ran before the row insert. A fresh capability cannot reject here in
-    // practice (issue → consume within one request).
-    const capabilityId = data.capability.capability_id;
-    const budget = data.capability.budget_usd_cents;
-
-    let outcome: ExecutorResult | { threw: string };
-    try {
-      outcome = await lookup.executor.execute({
-        capability: {
-          id: capabilityId,
-          action: normalized.action,
-          resource: normalized.resource,
-          budgetUsdCents: budget,
-        },
-        args: input.arguments ?? {},
-      });
-    } catch (err) {
-      outcome = { threw: err instanceof Error ? err.message : String(err) };
-    }
-
-    if (!("threw" in outcome) && "status" in outcome) {
-      // payment_required — the ONLY non-executing path: no executions row, no
-      // consume; the capability stays issued-but-unconsumed and expires.
-      data.payment_required = { price_usd_cents: outcome.price_usd_cents, challenge: outcome.challenge };
-      return { ok: true, data };
-    }
-
-    const consumed = await consumeCapability(capabilityId, {
-      action: normalized.action,
-      resource: normalized.resource,
-      amount: budget ?? undefined,
-    });
-    if (consumed.status === "rejected") {
-      return {
-        ok: false,
-        error: { code: "CAPABILITY_REJECTED", message: `capability rejected: ${consumed.reason}` },
-      };
-    }
-
-    const [executionRow] = await db()
-      .insert(executions)
-      .values({
-        capabilityId,
-        tool: ingested.intent.tool,
-        status: "running",
-        executor: ingested.toolRow.executor,
-      })
-      .returning();
-    await emit(
-      {
-        event_type: "tool.execution.started",
-        tenant_id: ingested.tenantId,
-        task_id: ingested.task.id,
-        agent_id: ingested.agent.id,
-        payload: {
-          execution_id: executionRow.id,
-          capability_id: capabilityId,
-          tool: ingested.intent.tool,
-          resource: normalized.resource,
-        },
-      },
-      meta,
-    );
-
-    if ("threw" in outcome) {
-      await db()
-        .update(executions)
-        .set({ status: "failed", error: outcome.threw, completedAt: new Date().toISOString() })
-        .where(eq(executions.id, executionRow.id));
-      await emit(
-        {
-          event_type: "tool.execution.failed",
-          tenant_id: ingested.tenantId,
-          task_id: ingested.task.id,
-          agent_id: ingested.agent.id,
-          payload: { execution_id: executionRow.id, capability_id: capabilityId, error_code: "EXECUTOR_ERROR" },
-        },
-        meta,
-      );
-      data.execution = { execution_id: executionRow.id, status: "failed", result_summary: null };
-    } else {
-      await db()
-        .update(executions)
-        .set({ status: "succeeded", resultSummary: outcome.summary, completedAt: new Date().toISOString() })
-        .where(eq(executions.id, executionRow.id));
-      await emit(
-        {
-          event_type: "tool.execution.completed",
-          tenant_id: ingested.tenantId,
-          task_id: ingested.task.id,
-          agent_id: ingested.agent.id,
-          payload: {
-            execution_id: executionRow.id,
-            capability_id: capabilityId,
-            result_summary: outcome.summary,
-          },
-        },
-        meta,
-      );
-      data.execution = { execution_id: executionRow.id, status: "succeeded", result_summary: outcome.summary };
-
-      // task.complete: the plan's execution-phase bullet — mark the task
-      // completed, emit task.completed, return summary "Task completed".
-      if (normalized.action === "task_complete") {
-        await emit(
-          {
-            event_type: "task.completed",
-            tenant_id: ingested.tenantId,
-            task_id: ingested.task.id,
-            agent_id: ingested.agent.id,
-            payload: { task_id: ingested.task.id, status: "completed", summary: "Task completed" },
-          },
-          meta,
-        );
-      }
-    }
+    data.capability = phase.capability;
+    data.payment_required = phase.payment_required;
+    data.execution = phase.execution;
     return { ok: true, data };
   } catch (err) {
     if (err instanceof GatewayError) {
