@@ -11,7 +11,7 @@ Every active plan gets its own directory — agents never run in the orchestrato
 
 `WT=~/.local/share/opencode/worktree/b95ec527e96af9bfaa762da13fa0336717652522`
 
-The orchestrator creates one worktree per plan (`$WT/cubic-p01`, `$WT/cubic-p03`, …) off latest `main` on branch `plan-XX`, runs `pnpm install` in it, and copies `app/.env.local` into it (with `cp`, never reading it). Solo waves: one worktree. Parallel waves (W3, W4, W5): two worktrees. Worktrees are deleted after their wave merges. Home-repo `main` stays pristine — merges only.
+The orchestrator creates one worktree per plan (`$WT/plan-01`, `$WT/plan-03`, …) off latest `main` on branch `plan-XX`, runs `pnpm install` in it, and copies `app/.env.local` into it (with `cp`, never reading it). Solo waves: one worktree. Parallel waves (W3, W4, W5): two worktrees. Worktrees are deleted after their wave merges. Home-repo `main` stays pristine — merges only.
 
 ## Wave map (strict order)
 
@@ -29,8 +29,8 @@ Hard rules: never launch a wave before the previous wave is fully merged; max 2 
 
 ## Per-wave loop
 
-1. Orchestrator preps each worktree: `git worktree add $WT/cubic-pXX -b plan-XX main` (fresh off latest main), `pnpm install` at its root, copies `app/.env.local` from the home repo.
-2. You open each worktree dir (`$WT/cubic-pXX`, visible in OpenChamber's sidebar) in your agent tool and paste `.agents/dispatch/plan-XX.md` verbatim. One agent per worktree; launch a wave's two agents close together.
+1. Orchestrator preps each worktree: `git worktree add $WT/plan-XX -b plan-XX main` (fresh off latest main), `pnpm install` at its root, copies `app/.env.local` from the home repo.
+2. You open each worktree dir (`$WT/plan-XX`, visible in OpenChamber's sidebar) in your agent tool and paste `.agents/dispatch/plan-XX.md` verbatim. One agent per worktree; launch a wave's two agents close together.
 3. Each agent implements, ticks its ACs, runs its own council reviews during the work and the `contract-reviewer` gate before reporting done (both mandated in every dispatch prompt), commits to its branch, and ends with a final report including the gate verdict. Agents commit inside their own worktree — never onto `main` directly.
 4. You ping the orchestrator: `plan-XX done` (paste the final report if the agent isn't visible to the orchestrator).
 5. Orchestrator verifies in the branch (`pnpm typecheck && pnpm lint && pnpm test`), independently re-runs the `contract-reviewer` gate (the agent's self-gate does not replace the merger's), merges into `main` only on MERGE (parallel waves: lower plan number first, rebases the second if needed), folds spike findings into `MEMORY.md`, deletes temp worktrees, preps the next wave.
@@ -39,7 +39,7 @@ Hard rules: never launch a wave before the previous wave is fully merged; max 2 
 
 - [x] Plans + dispatch prompts committed to `main`.
 - [x] `app/.env.local` in the home repo holds `DATABASE_URL` (later also `HEDERA_*`, `AGENT0_SUBGRAPH_URL` as waves need them — you add them there, orchestrator copies outward).
-- [x] W1 worktree `$WT/cubic-p01` on branch `plan-01`: installed + env copied → launch is unblocked (open it from OpenChamber's sidebar).
+- [x] W1 done and merged (worktree removed after merge).
 
 ## Secrets discipline
 
