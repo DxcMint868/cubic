@@ -261,80 +261,87 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
         },
         meta,
       );
-      data.payment = {
-        payment_id: paymentRow.id,
-        status: "failed",
-        settlement_ref: null,
-        error_code: null,
-      };
 
-      // Fresh single-use challenge straight from the live service, then the
-      // server-held payment authority settles it through Blocky402 on Hedera.
-      let priceUsdCents: number | null = null;
-      let challenge: unknown = null;
-      try {
-        const discovered = await fetchScannerChallenge(
-          String(ingested.toolRow?.executorConfig?.endpoint ?? ""),
-          normalized.resource,
-        );
-        priceUsdCents = discovered.price_usd_cents;
-        challenge = discovered.challenge;
-      } catch {
-        priceUsdCents = null;
-      }
-
-      let payResult: Awaited<ReturnType<ReturnType<typeof getPaymentProvider>["pay"]>>;
-      if (priceUsdCents == null || challenge == null) {
-        payResult = { status: "failed", error_code: "CHALLENGE_UNAVAILABLE" };
-      } else if (priceUsdCents !== amount) {
-        // The agent may not buy at a discount: the service's real price must
-        // match the budget-scoped capability it authorized.
-        payResult = { status: "failed", error_code: "PRICE_MISMATCH" };
-      } else {
-        payResult = await getPaymentProvider().pay({
-          capability_id: capabilityId,
-          service: "scanner",
-          amount_usd_cents: priceUsdCents,
-          challenge,
-        });
-      }
-
-      if (payResult.status !== "completed") {
-        // EXACT failed branch: row failed + payment.failed + revoke + no execution.
-        await db()
-          .update(payments)
-          .set({ status: "failed" })
-          .where(eq(payments.id, paymentRow.id));
-        await emit(
-          {
-            event_type: "payment.failed",
-            tenant_id: ingested.tenantId,
-            task_id: ingested.task.id,
-            agent_id: ingested.agent.id,
-            payload: {
-              payment_id: paymentRow.id,
-              capability_id: capabilityId,
-              error_code: payResult.error_code,
+      // Exception-safety: a throw after a successful on-chain settle must not
+      // strand money silently — best-effort reconcile (row failed, event,
+      // revoke) before surfacing the error.
+      const failPayment = async (errorCode: string, settledRef: string | null): Promise<void> => {
+        try {
+          await db()
+            .update(payments)
+            .set(settledRef ? { status: "failed", x402Ref: settledRef, settledAt: new Date().toISOString() } : { status: "failed" })
+            .where(eq(payments.id, paymentRow.id));
+        } catch { /* best-effort */ }
+        try {
+          await emit(
+            {
+              event_type: "payment.failed",
+              tenant_id: ingested.tenantId,
+              task_id: ingested.task.id,
+              agent_id: ingested.agent.id,
+              payload: {
+                payment_id: paymentRow.id,
+                capability_id: capabilityId,
+                error_code: errorCode,
+              },
             },
-          },
-          meta,
-        );
-        await revokeCapability(capabilityId);
+            meta,
+          );
+        } catch { /* best-effort */ }
+        try {
+          await revokeCapability(capabilityId);
+        } catch { /* best-effort */ }
         data.payment = {
           payment_id: paymentRow.id,
           status: "failed",
-          settlement_ref: null,
-          error_code: payResult.error_code,
+          settlement_ref: settledRef,
+          error_code: errorCode,
         };
-        return { ok: true, data };
-      }
+      };
+      try {
+        // Fresh single-use challenge straight from the live service, then the
+        // server-held payment authority settles it through Blocky402 on Hedera.
+        let priceUsdCents: number | null = null;
+        let challenge: unknown = null;
+        try {
+          const discovered = await fetchScannerChallenge(
+            String(ingested.toolRow?.executorConfig?.endpoint ?? ""),
+            normalized.resource,
+          );
+          priceUsdCents = discovered.price_usd_cents;
+          challenge = discovered.challenge;
+        } catch {
+          priceUsdCents = null;
+        }
 
-      // Completed: row completed + payment.completed, then consume with the
-      // settled numeric amount, then execute the scan.
-      await db()
-        .update(payments)
-        .set({ status: "completed", x402Ref: payResult.settlement_ref, settledAt: new Date().toISOString() })
-        .where(eq(payments.id, paymentRow.id));
+        let payResult: Awaited<ReturnType<ReturnType<typeof getPaymentProvider>["pay"]>>;
+        if (priceUsdCents == null || challenge == null) {
+          payResult = { status: "failed", error_code: "CHALLENGE_UNAVAILABLE" };
+        } else if (priceUsdCents !== amount) {
+          // The agent may not buy at a discount: the service's real price must
+          // match the budget-scoped capability it authorized.
+          payResult = { status: "failed", error_code: "PRICE_MISMATCH" };
+        } else {
+          payResult = await getPaymentProvider().pay({
+            capability_id: capabilityId,
+            service: "scanner",
+            amount_usd_cents: priceUsdCents,
+            challenge,
+          });
+        }
+
+        if (payResult.status !== "completed") {
+          // EXACT failed branch: row failed + payment.failed + revoke + no execution.
+          await failPayment(payResult.error_code, null);
+          return { ok: true, data };
+        }
+
+        // Completed: row completed + payment.completed, then consume with the
+        // settled numeric amount, then execute the scan.
+        await db()
+          .update(payments)
+          .set({ status: "completed", x402Ref: payResult.settlement_ref, settledAt: new Date().toISOString() })
+          .where(eq(payments.id, paymentRow.id));
       await emit(
         {
           event_type: "payment.completed",
@@ -362,6 +369,9 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
         amount: priceUsdCents ?? undefined,
       });
       if (purchased.status === "rejected") {
+        // Money settled but the capability could not be consumed — do not
+        // leave the authority live; revoke before surfacing the rejection.
+        await revokeCapability(capabilityId);
         return {
           ok: false,
           error: { code: "CAPABILITY_REJECTED", message: `capability rejected: ${purchased.reason}` },
@@ -485,6 +495,19 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
         result_summary: purchaseOutcome.summary,
       };
       return { ok: true, data };
+      } catch (err) {
+        if (data.execution?.status === "succeeded") {
+          // The scan already succeeded — the audit chain is complete and
+          // honest; surface the error instead of inventing a failure state.
+          throw err;
+        }
+        // Unexpected throw mid-purchase (provider/config/DB) — reconcile
+        // best-effort so money and capability are never stranded silently.
+        // If settlement already landed on-chain, record the real ref.
+        const settledRef = data.payment?.status === "completed" ? data.payment.settlement_ref : null;
+        await failPayment(err instanceof Error ? err.message : "SETTLEMENT_ERROR", settledRef);
+        return { ok: true, data };
+      }
     }
 
     let outcome: ExecutorResult | { threw: string };

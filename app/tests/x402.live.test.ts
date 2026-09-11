@@ -106,8 +106,31 @@ beforeAll(async () => {
     return;
   }
   // Operator balance guard: refuse to attempt settlement it cannot cover.
-  // If the mirror itself is unreachable, skip too — never spend unverified.
-  const requiredTinybars = 1 * 30_000 * 1e8 / 226_576; // ~13.2M tinybars at the pinned probe rate
+  // Uses the LIVE mirror exchange rate (no magic constants); if the mirror is
+  // unreachable, skip too — never spend unverified.
+  const priceCents = config().X402_SCANNER_PRICE_CENTS;
+  let requiredTinybars: number | null = null;
+  try {
+    const rateRes = await fetch(
+      `https://testnet.mirrornode.hedera.com/api/v1/network/exchangerate`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!rateRes.ok) {
+      console.warn("[x402.live] skipping: mirror exchange-rate lookup failed (blocked-on-env)");
+      return;
+    }
+    const rate = (await rateRes.json()) as { current_rate?: { cent_equivalent?: number; hbar_equivalent?: number } };
+    const cent = rate.current_rate?.cent_equivalent;
+    const hbar = rate.current_rate?.hbar_equivalent;
+    if (typeof cent !== "number" || typeof hbar !== "number" || cent <= 0 || hbar <= 0) {
+      console.warn("[x402.live] skipping: unusable exchange-rate payload (blocked-on-env)");
+      return;
+    }
+    requiredTinybars = Math.max(1, Math.round((priceCents * hbar * 1e8) / cent));
+  } catch {
+    console.warn("[x402.live] skipping: mirror exchange-rate lookup failed (blocked-on-env)");
+    return;
+  }
   try {
     const res = await fetch(
       `https://testnet.mirrornode.hedera.com/api/v1/accounts/${encodeURIComponent(c.HEDERA_OPERATOR_ID)}?balance=true`,
@@ -121,7 +144,7 @@ beforeAll(async () => {
     const balance = body.balance?.balance ?? 0;
     if (balance < requiredTinybars) {
       console.warn(
-        `[x402.live] skipping: operator balance ${balance} tinybars below the required ~${Math.round(requiredTinybars)} (blocked-on-env)`,
+        `[x402.live] skipping: operator balance ${balance} tinybars below the required ~${requiredTinybars} (blocked-on-env)`,
       );
       return;
     }

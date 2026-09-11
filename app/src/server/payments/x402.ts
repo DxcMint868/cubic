@@ -12,7 +12,8 @@ export interface PaymentProvider {
 
 // Spike-pinned (plan-05 ## Spike findings): Blocky402 facilitator + Hedera
 // mirror node base URLs, selected by HEDERA_NETWORK. Testnet is open access;
-// mainnet facilitator is documented by Blocky402 as coming soon.
+// the mainnet URL is documented-but-unverified (Blocky402 lists it "coming
+// soon") — do not treat it as a verified endpoint until the spike re-pins it.
 const FACILITATOR_URLS: Record<"testnet" | "mainnet", string> = {
   testnet: "https://api.testnet.blocky402.com",
   mainnet: "https://api.blocky402.com/v1",
@@ -275,9 +276,12 @@ export class HederaX402Provider implements PaymentProvider {
   }
 
   async verifySettlement(input: { challenge: unknown; settlement_ref: string }): Promise<boolean> {
-    const requirements = this.settled.get(input.settlement_ref) ?? input.challenge;
-    if (requirements === null || typeof requirements !== "object") return false;
-    const ch = requirements as Partial<X402Challenge>;
+    // Fail closed: only settlements THIS process made (recorded at settle time)
+    // verify. A cache miss — restart, foreign process, or a mirror-scraped
+    // third-party transfer crediting payTo — can never unlock a report.
+    const requirements = this.settled.get(input.settlement_ref);
+    if (!requirements) return false;
+    const ch = requirements;
     if (typeof ch.payTo !== "string" || typeof ch.amount !== "string" || !/^[0-9]+$/.test(ch.amount)) return false;
     const required = Number(ch.amount);
     // Mirror node wants the dash form: 0.0.<payer>-<secs>-<nanos>. Both the @

@@ -130,10 +130,20 @@ is never faked into a valid payment.
   or any credential. `X402_SIMULATE_FAILURE` / dev bypass are env-only.
 - Settlement is verified **independently by the merchant** against the Hedera
   mirror node before any report is returned — a forged or absent settlement
-  gets 402, never the report.
+  gets 402, never the report. Verification is **fail-closed and
+  process-local**: the service only honors settlement refs that THIS gateway
+  process settled (the provider records the exact settled requirements at
+  settle time). A restart, a foreign process, or a mirror-scraped
+  third-party transfer crediting the merchant can never unlock a report.
 - The purchase follow-up must carry `origin: "payment_discovery"` (the
   gateway's discovery marker). An agent-origin "purchase" gets the discovery
-  response again — no settlement, no free scan.
+  response again — no settlement, no free scan. The price is verified
+  server-side against the service's own fresh challenge: an agent cannot buy
+  at a discount (`PRICE_MISMATCH` fails closed, capability revoked).
+- A settlement whose purchase record can't reconcile (service unreachable →
+  `CHALLENGE_UNAVAILABLE`; price drift → `PRICE_MISMATCH`; provider error →
+  `SETTLEMENT_ERROR`) marks the payments row failed, emits `payment.failed`,
+  and revokes the capability — no silent stranding of money or authority.
 - Settlement refs are single-use per service process (MVP limitation: the
   replay guard is in-memory; a restart clears it).
 
