@@ -92,11 +92,11 @@ export async function consumeCapability(
 
 ## Acceptance criteria
 
-- [ ] Vitest: issue from allow → `data.capability` matches `IssuedCapability` (nonce 64 hex, `expires_at` ≈ now+5m, `policy_hash` = sha256 hex of the canonical policy JSON — assert it CHANGES when a rule changes, proving it hashes the document, not the name); serialized response contains no env/secret values.
-- [ ] Issue from escalate with a pending approval → throws; with an approved approval row → issues.
-- [ ] Consume happy path → `capability.consumed`; second consume → `replay`; two PARALLEL consumes → exactly one succeeds.
-- [ ] Expired row (clock fixture) → `expired`; random uuid → `not_found`; wrong action/resource → `action_mismatch`/`resource_mismatch`; numeric amount 25 against budget 10 → `budget_exceeded`; `amount: undefined` against `null` budget → proceeds (rule skipped).
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green.
+- [x] Vitest: issue from allow → `data.capability` matches `IssuedCapability` (nonce 64 hex, `expires_at` ≈ now+5m, `policy_hash` = sha256 hex of the canonical policy JSON — assert it CHANGES when a rule changes, proving it hashes the document, not the name); serialized response contains no env/secret values.
+- [x] Issue from escalate with a pending approval → throws; with an approved approval row → issues.
+- [x] Consume happy path → `capability.consumed`; second consume → `replay`; two PARALLEL consumes → exactly one succeeds.
+- [x] Expired row (clock fixture) → `expired`; random uuid → `not_found`; wrong action/resource → `action_mismatch`/`resource_mismatch`; numeric amount 25 against budget 10 → `budget_exceeded`; `amount: undefined` against `null` budget → proceeds (rule skipped).
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green.
 
 ## Out of scope
 

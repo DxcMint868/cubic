@@ -126,7 +126,14 @@ describe("plan-02 gateway", () => {
     } else {
       expect(d.approval_id).toBeNull();
     }
-    expect(d.capability).toBeNull();
+    // plan-03: allow issues a scoped capability; deny/escalate issue none.
+    if (c.decision === "allow") {
+      expect(d.capability).not.toBeNull();
+      expect(d.capability!.capability_id).toMatch(UUID_RE);
+      expect(d.capability!.nonce).toMatch(/^[0-9a-f]{64}$/);
+    } else {
+      expect(d.capability).toBeNull();
+    }
     expect(d.payment).toBeNull();
     expect(d.execution).toBeNull();
     expect(d.payment_required).toBeNull();
@@ -218,7 +225,10 @@ describe("plan-02 gateway", () => {
 
   it("GET /api/audit/trace/[taskId] returns the plan-00 §G shape; every decision includes matched_rule_id", async () => {
     setContextProvider(withReputation(0.95));
-    await call("github.get_pull_request", { repo: "acme/backend", pr: 421 }, seededTaskId);
+    const own = await call("github.get_pull_request", { repo: "acme/backend", pr: 421 }, seededTaskId);
+    expect(own.ok).toBe(true);
+    if (!own.ok) return;
+    const ownIntentId = own.data.intent_id;
 
     const res = await traceGET(
       new Request(`http://localhost/api/audit/trace/${seededTaskId}`),
@@ -247,10 +257,17 @@ describe("plan-02 gateway", () => {
       expect(entry.executions).toEqual([]);
       expect(Array.isArray(entry.approvals)).toBe(true);
     }
-    const allowEntry = body.data.chain.find((e: { decision: { decision: string } | null }) => e.decision?.decision === "allow");
+    const allowEntry = body.data.chain.find((e: { intent: { id: string } }) => e.intent?.id === ownIntentId);
     expect(allowEntry).toBeDefined();
+    expect(allowEntry.decision.decision).toBe("allow");
     expect(allowEntry.decision.matched_rule_id).toBe("default-allow");
-    expect(allowEntry.capability).toBeNull();
+    // plan-03: the allow entry now carries its issued capability in the trace.
+    expect(allowEntry.capability).toMatchObject({
+      subject: "agent:8472",
+      action: "get_pull_request",
+      resource: "acme/backend#421",
+      status: "issued",
+    });
 
     expect(body.data.events.length).toBeGreaterThan(0);
     for (const event of body.data.events) {
