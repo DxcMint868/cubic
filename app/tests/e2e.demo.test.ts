@@ -319,7 +319,7 @@ describe("plan-10 adversarial reason codes", () => {
     });
   }, 30000);
 
-  it("low reputation → escalate reputation_below_threshold", async () => {
+  it.skipIf(!process.env.THEGRAPH_API_KEY && !process.env.AGENT0_SUBGRAPH_URL)("low reputation → escalate reputation_below_threshold", async () => {
     const taskId = await newTask("e2e: low reputation", 50, lab1Id);
     const r = await call(taskId, "agent:lab-1", "github.get_pull_request", { repo: "acme/backend", pr: 421 });
     expect(r.ok && r.data.decision).toBe("escalate");

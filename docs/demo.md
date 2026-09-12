@@ -110,7 +110,7 @@ endpoint unless the demo tenant's `scanner.scan` tool row is repointed.
 | expired capability | consume with `expires_at` in the past | rejected `expired` |
 | tampered capability | consume random uuid | rejected `not_found` (no event — nothing attributable, plan-03 exemption) |
 | failed payment | purchase with `X402_SIMULATE_FAILURE=1` | `payment.failed`, capability `revoked`, zero `tool.execution.*` |
-| low reputation | `agent:lab-1` (fixture 0.50) read | ESCALATE `reputation_below_threshold` |
+| low reputation | `agent:lab-1` live Base Agent0 `8453:74108` (real negative feedback) read | ESCALATE `reputation_below_threshold` |
 
 ## Treasury branch (`demo:treasury`, plan-11)
 

@@ -292,12 +292,25 @@ describe("plan-11 reasoning_ref", () => {
   }, 120000);
 
   it("provider set but no key → base, null, no throw", async () => {
-    const r = await withEnv({ LLM_INTENT_PROVIDER: "test-provider" }, () =>
-      call(treasuryTaskId, "treasury.stake", { protocol: "lido", amount_usd_cents: 5_000 }),
-    );
-    expect(r.ok && r.data.decision).toBe("allow");
-    const [row] = await db().select().from(intents).where(eq(intents.id, (r.ok && r.data.intent_id) as string));
-    expect((row.normalized as { reasoning_ref?: unknown }).reasoning_ref).toBeNull();
+    // True absence: the dev .env.local may carry a real key — remove it (and
+    // the tracing flag) for the duration so this tests the no-key path.
+    const savedKey = process.env.LANGSMITH_API_KEY;
+    const savedTracing = process.env.LANGSMITH_TRACING;
+    delete process.env.LANGSMITH_API_KEY;
+    delete process.env.LANGSMITH_TRACING;
+    delete (globalThis as Record<string, unknown>).__cubicConfig;
+    try {
+      const r = await withEnv({ LLM_INTENT_PROVIDER: "test-provider" }, () =>
+        call(treasuryTaskId, "treasury.stake", { protocol: "lido", amount_usd_cents: 5_000 }),
+      );
+      expect(r.ok && r.data.decision).toBe("allow");
+      const [row] = await db().select().from(intents).where(eq(intents.id, (r.ok && r.data.intent_id) as string));
+      expect((row.normalized as { reasoning_ref?: unknown }).reasoning_ref).toBeNull();
+    } finally {
+      if (savedKey !== undefined) process.env.LANGSMITH_API_KEY = savedKey;
+      if (savedTracing !== undefined) process.env.LANGSMITH_TRACING = savedTracing;
+      delete (globalThis as Record<string, unknown>).__cubicConfig;
+    }
   }, 30000);
 
   it.skipIf(!process.env.LANGSMITH_API_KEY)("live key + provider → real run_id, read-back verified", async () => {

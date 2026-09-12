@@ -495,6 +495,10 @@ describe("plan-13 reasoning_ref origin (AC4)", () => {
   // mocked langsmith SDK (no real key needed): a captured run id that reads
   // back + shareRun resolves → the ref persists with origin "server-minted".
   it("traceAssistedNormalize persists origin 'server-minted' on the write side", async () => {
+    // NOTE (2026-09-12, merger-observed): fully mocked path yet takes ~6s in
+    // this env (mechanism undetermined — mocks verified applied: asserted run_id
+    // is the mock's 2222 fixture, so no live SDK runs here). 30s budget matches
+    // the repo's latency-timeout precedent; a true hang still trips it.
     process.env.LANGSMITH_API_KEY = "vitest-dummy-key";
     try {
       const { traceAssistedNormalize } = await import("../src/server/reasoning/langsmith");
@@ -517,7 +521,7 @@ describe("plan-13 reasoning_ref origin (AC4)", () => {
       delete process.env.LANGSMITH_API_KEY;
       delete process.env.LANGSMITH_FAIL_READ;
     }
-  });
+  }, 30000);
 
   const refEntry = (origin?: string) => ({
     intent: {

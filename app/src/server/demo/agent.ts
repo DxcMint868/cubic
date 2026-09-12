@@ -305,9 +305,8 @@ async function adversarial(): Promise<void> {
   // fixture settles.
   process.env.X402_SIMULATE_FAILURE = "1";
   delete (globalThis as Record<string, unknown>).__cubicConfig;
-  // The low-reputation fixture needs the Graph trust path (the default auto
-  // provider stays static without a subgraph URL); the demo fixture identity
-  // short-circuits in-process, never networked.
+  // agent:lab-1 carries the LIVE Base Agent0 identity 8453:74108 (real
+  // negative feedback) — the trust beat below reads live reputation.
   setContextProvider(new GraphContextProvider());
 
   say("[adversarial] seeding fresh demo state …");
@@ -390,13 +389,14 @@ async function adversarial(): Promise<void> {
       results.push(["failed payment (simulated)", "payment.failed + revoked, 0 executions"]);
     }
 
-    // 6. Low reputation → ESCALATE reputation_below_threshold (Graph fixture).
+    // 6. Low reputation → ESCALATE reputation_below_threshold (LIVE Base
+    // Agent0 agent 8453:74108 — real negative on-chain feedback, read live).
     {
       const taskId = await newTask("adversarial: low reputation", 50, lab1!.id);
       const r = await call(taskId, "agent:lab-1", "github.get_pull_request", { repo: "acme/backend", pr: 421 });
       check("low-reputation", r.ok && r.data.decision === "escalate", `expected escalate, got ${JSON.stringify(r)}`);
       check("low-reputation", r.ok && r.data.reasons.some((x) => x.code === "reputation_below_threshold"), `expected reputation_below_threshold, got ${JSON.stringify(r.ok && r.data.reasons)}`);
-      results.push(["low reputation (lab-1, 0.50)", "ESCALATE reputation_below_threshold"]);
+      results.push(["low reputation (lab-1 live 8453:74108)", "ESCALATE reputation_below_threshold"]);
     }
   } finally {
     scanner.close();

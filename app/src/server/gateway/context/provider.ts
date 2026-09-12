@@ -15,13 +15,14 @@ export class StaticContextProvider implements ContextProvider {
   }
 }
 
-// plan-07 EXACT selection: config().AGENT0_SUBGRAPH_URL is set AND
-// agent.erc8004_identity != null → GraphContextProvider; otherwise
+// plan-07 selection, extended plan-14: AGENT0_SUBGRAPH_URL *or*
+// THEGRAPH_API_KEY engages the graph path (the client defaults to the Base
+// deployment off the key). Agent without identity, or neither configured →
 // StaticContextProvider (0.95). No other changes to plan-02's pipeline.
 export class AutoContextProvider implements ContextProvider {
   async getFacts(intent: FactsIntentRef, ctx: FactsCtx): Promise<Facts> {
     const [agent] = await db().select().from(agents).where(eq(agents.id, ctx.agentId));
-    if (agent?.erc8004Identity != null && config().AGENT0_SUBGRAPH_URL) {
+    if (agent?.erc8004Identity != null && (config().AGENT0_SUBGRAPH_URL || config().THEGRAPH_API_KEY)) {
       return new GraphContextProvider().getFacts(intent, ctx);
     }
     return new StaticContextProvider().getFacts(intent, ctx);

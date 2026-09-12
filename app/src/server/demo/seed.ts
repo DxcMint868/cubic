@@ -18,10 +18,13 @@ const fixture = {
     status: "active", erc8004_identity: null,
     declared_capabilities: ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"],
   }, {
-    // plan-07 EXACT low-reputation demo agent — GraphContextProvider resolves
-    // erc8004_identity "fixture:low-rep" to the demo fixture trust (0.50).
+    // plan-14: REAL low-reputation identity — Base Agent0 agent 8453:74108
+    // carries live negative feedback (reputation ~0.10) and drives a genuine
+    // reputation_below_threshold escalate on camera. The in-code
+    // "fixture:low-rep" map remains as the labeled offline fallback (no seed
+    // row references it).
     agent_key: "agent:lab-1", name: "low-rep-research-agent", environment: "demo",
-    status: "active", erc8004_identity: "fixture:low-rep",
+    status: "active", erc8004_identity: "8453:74108",
     declared_capabilities: ["github.get_pull_request"],
   }],
   tools: [

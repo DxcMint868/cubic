@@ -18,6 +18,19 @@ const cache = new Map<string, { value: AgentTrust; expires: number }>();
 
 const GRAPHQL_TIMEOUT_MS = 5_000;
 
+// Default: Agent0 Base Mainnet deployment (agent0lab/subgraph). Hedera has no
+// ERC-8004 contracts deployed, so reputation is read where it lives (Base)
+// and enforced where we operate (Hedera testnet) — cross-chain trust context.
+const DEFAULT_SUBGRAPH_ID = "43s9hQRurMGjuYnC1r2ZwS6xSQktbFyXMPMqGKUFJojb";
+
+export function endpoint(): string | null {
+  const explicit = config().AGENT0_SUBGRAPH_URL;
+  if (explicit) return explicit;
+  const key = config().THEGRAPH_API_KEY;
+  if (!key) return null;
+  return `https://gateway.thegraph.com/api/${key}/subgraphs/id/${DEFAULT_SUBGRAPH_ID}`;
+}
+
 // Query verified against the live Agent0 Subgraphs (ERC-8004) docs and the
 // canonical schema (github.com/agent0lab/subgraph schema.graphql): agent carries
 // registrationFile (capabilities: MCP tools + A2A skills), non-revoked feedback
@@ -47,10 +60,12 @@ query GetAgentTrust($id: ID!) {
 
 // Subgraphs serialize BigDecimal/uint fields as JSON strings; accept plain
 // decimal strings only ("" or "0x10"-style junk must fail → fallback 0.80).
+// Negative scores are REAL on-chain data (penalty feedback, e.g. -50) —
+// accept them; normalizeReputation clamps the mean into 0..1 below.
 const scoreValue = z
-  .union([z.number(), z.string().regex(/^\d+(\.\d+)?$/, "decimal string")])
+  .union([z.number(), z.string().regex(/^-?\d+(\.\d+)?$/, "decimal string")])
   .transform((v) => (typeof v === "number" ? v : Number(v)))
-  .refine((v) => Number.isFinite(v) && v >= 0, "feedback.value must be a non-negative number");
+  .refine((v) => Number.isFinite(v), "feedback.value must be a finite number");
 
 const agentResponseSchema = z.object({
   data: z.object({
@@ -135,8 +150,8 @@ export class HttpAgent0Client implements Agent0Client {
     const hit = cache.get(erc8004Identity);
     if (hit && hit.expires > now) return hit.value;
 
-    const url = config().AGENT0_SUBGRAPH_URL;
-    if (!url) throw new Error("agent0: AGENT0_SUBGRAPH_URL not configured");
+    const url = endpoint();
+    if (!url) throw new Error("agent0: set AGENT0_SUBGRAPH_URL or THEGRAPH_API_KEY");
 
     const res = await fetch(url, {
       method: "POST",

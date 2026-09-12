@@ -30,7 +30,6 @@ const GRAPH_IDENTITY_2 = "8453:9002";
 const pseudonymFor = (agentKey: string) =>
   createHash("sha256").update(`${agentKey}|cubic-network-v1`).digest("hex").slice(0, 16);
 
-let labTaskId: string;
 let graphTaskId: string;
 let graphTaskId2: string;
 let graphAgentId: string;
@@ -96,14 +95,6 @@ beforeAll(async () => {
   await seed();
   const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
 
-  const [labAgent] = await db().select().from(agents)
-    .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, "agent:lab-1")));
-  const [labTask] = await db().insert(tasks).values({
-    tenantId: tenant.id, agentId: labAgent.id, title: "plan-07 lab task (budget 50)",
-    budgetUsdCents: 50, status: "open",
-  }).returning();
-  labTaskId = labTask.id;
-
   const [graphAgent] = await db().insert(agents).values({
     tenantId: tenant.id, agentKey: "agent:graph-01", name: "graph-test-agent",
     environment: "test", status: "active", erc8004Identity: GRAPH_IDENTITY,
@@ -138,7 +129,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Own pseudonym rows: seed() only deletes fixture pseudonyms (8472, lab-1).
-  for (const key of ["agent:graph-01", "agent:graph-02"]) {
+  for (const key of ["agent:graph-01", "agent:graph-02", "agent:fixture-probe", "agent:key-probe"]) {
     await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonymFor(key)));
   }
   await seed(); // demo-tenant rows only: clears gateway artifacts, restores fixtures
@@ -166,12 +157,24 @@ describe("plan-07 graph context", () => {
     expect(result.data.capability?.capability_id).toMatch(UUID_RE);
   }, 30000);
 
-  it("fixture identity agent:lab-1 → 0.50 → escalate reputation_below_threshold (no network)", async () => {
+  it("fixture identity → 0.50 → escalate reputation_below_threshold (no network)", async () => {
+    // lab-1 now carries a LIVE identity (plan-14); the offline fallback path
+    // is preserved via a throwaway row carrying the fixture identity.
+    const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
+    const [fxAgent] = await db().insert(agents).values({
+      tenantId: tenant.id, agentKey: "agent:fixture-probe", name: "fixture-probe",
+      environment: "test", status: "active", erc8004Identity: "fixture:low-rep",
+      declaredCapabilities: ["github.get_pull_request"],
+    }).returning();
+    const [fxTask] = await db().insert(tasks).values({
+      tenantId: tenant.id, agentId: fxAgent.id, title: "fixture probe task",
+      budgetUsdCents: 50, status: "open",
+    }).returning();
     const calls = { count: 0 };
     setContextProvider(new GraphContextProvider(stubClient(highTrust, calls)));
     const result = await runToolCall({
-      task_id: labTaskId,
-      agent_key: "agent:lab-1",
+      task_id: fxTask.id,
+      agent_key: "agent:fixture-probe",
       tool: "github.get_pull_request",
       arguments: { repo: "acme/backend", pr: 421 },
     });
@@ -273,7 +276,7 @@ describe("plan-07 graph context", () => {
     });
   });
 
-  it("selection: URL unset + identity → Static 0.95; URL set + identity → Graph fact", async () => {
+  it("selection: no URL/key + identity → Static 0.95; URL or key + identity → Graph fact", async () => {
     setContextProvider(new AutoContextProvider());
     const intent = { taskId: graphTaskId, tool: "github.get_pull_request" } as const;
     const ctx = { agentId: graphAgentId, toolRow: null } as const;
@@ -282,10 +285,10 @@ describe("plan-07 graph context", () => {
     const noFetch = vi.fn();
     vi.stubGlobal("fetch", noFetch);
     const original = config();
-    globalThis.__cubicConfig = { ...original, AGENT0_SUBGRAPH_URL: undefined };
+    globalThis.__cubicConfig = { ...original, AGENT0_SUBGRAPH_URL: undefined, THEGRAPH_API_KEY: undefined };
     try {
       const facts = await new AutoContextProvider().getFacts(intent, ctx);
-      expect(facts.agent_reputation).toBe(0.95); // URL unset → StaticContextProvider
+      expect(facts.agent_reputation).toBe(0.95); // neither URL nor key → StaticContextProvider
       expect(noFetch).not.toHaveBeenCalled();
     } finally {
       globalThis.__cubicConfig = original;
@@ -311,6 +314,37 @@ describe("plan-07 graph context", () => {
       expect(noIdentity.agent_reputation).toBe(0.95); // erc8004_identity null → Static even with URL set
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
+
+    // plan-14: key-only (no URL) also engages the graph path. Fresh identity:
+    // the client cache is keyed by identity, so a reused id would serve rows
+    // cached by earlier legs and prove nothing about fetch.
+    const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
+    const [keyAgent] = await db().insert(agents).values({
+      tenantId: tenant.id, agentKey: "agent:key-probe", name: "key-probe",
+      environment: "test", status: "active", erc8004Identity: "8453:9100",
+      declaredCapabilities: ["github.get_pull_request"],
+    }).returning();
+    const [keyTask] = await db().insert(tasks).values({
+      tenantId: tenant.id, agentId: keyAgent.id, title: "key probe task",
+      budgetUsdCents: 50, status: "open",
+    }).returning();
+    const keyMock = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify(subgraphPayload([72], { status: "COMPLETED", response: 80 })), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", keyMock);
+    const origKey = config();
+    globalThis.__cubicConfig = { ...origKey, AGENT0_SUBGRAPH_URL: undefined, THEGRAPH_API_KEY: "test-key" };
+    try {
+      const keyFacts = await new AutoContextProvider().getFacts(
+        { taskId: keyTask.id, tool: "github.get_pull_request" },
+        { agentId: keyAgent.id, toolRow: null },
+      );
+      expect(keyFacts.agent_reputation).toBe(0.72); // key-only + identity → Graph
+      expect(keyMock).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.__cubicConfig = origKey;
+    }
   });
 
   it("GraphContextProvider is plan-02's identical provider interface (Static-compatible swap)", async () => {
@@ -332,4 +366,21 @@ describe("plan-07 graph context", () => {
     expect(graphFacts.task_budget_usd_cents).toBe(staticFacts.task_budget_usd_cents);
     expect(graphFacts.budget_spent_usd_cents).toBe(staticFacts.budget_spent_usd_cents);
   });
+});
+
+describe("plan-14 live Agent0 (env-gated)", () => {
+  const hasLive = Boolean(process.env.THEGRAPH_API_KEY || process.env.AGENT0_SUBGRAPH_URL);
+  // Observed 2026-09-12 on Base mainnet: 8453:55985 ≈ 0.897 (high), 8453:74108
+  // ≈ 0.100 (negative on-chain feedback). Sides of the 0.80 floor are asserted;
+  // exact values drift as feedback accrues — a drift failure here is informative.
+  it.skipIf(!hasLive)("real identities resolve with live scores", async () => {
+    const client = new HttpAgent0Client();
+    const high = await client.lookup("8453:55985");
+    expect(high.reputation).toBeGreaterThanOrEqual(0);
+    expect(high.reputation).toBeLessThanOrEqual(1);
+    expect(["passed", "failed", "unknown"]).toContain(high.validation);
+    const low = await client.lookup("8453:74108");
+    expect(low.reputation).toBeLessThan(0.8);
+    expect(low.reputation).toBeGreaterThanOrEqual(0);
+  }, 60000);
 });
