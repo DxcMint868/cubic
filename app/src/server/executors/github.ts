@@ -79,6 +79,19 @@ export class GithubExecutor implements Executor {
         };
       }
       default:
+        // plan-10: deploy.production normalizes to action deploy_production and
+        // the seed wires it to this executor, but no case handled it — every
+        // approved deploy died with "unsupported action". There is no real
+        // deploy target in the MVP, so this is mock-always (labeled as such);
+        // the authorization chain around it (escalate → approval → capability
+        // → execution) is the real, tested behavior.
+        if (capability.action === "deploy_production") {
+          return {
+            summary: `Deployed ${repo} to production (mock)`,
+            result: { repo, environment: "production", deployed: true },
+            mode: "mock",
+          };
+        }
         throw new Error(`github executor: unsupported action ${capability.action}`);
     }
   }
