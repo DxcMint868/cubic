@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { logger } from "../logging";
+import { getSecretProtector } from "../ledger/provider";
 
 const log = logger("x402");
 
@@ -230,10 +231,13 @@ export class HederaX402Provider implements PaymentProvider {
     try {
       const { createClientHederaSigner, PrivateKey } = await import("@x402/hedera");
       const { ExactHederaScheme } = await import("@x402/hedera/exact/client");
+      // plan-12: the operator key is read ONLY through the SecretProtector
+      // seam (dev backend = labeled env plaintext; ledger backend = Key Ring).
+      const operatorKey = await getSecretProtector().use("HEDERA_OPERATOR_KEY");
       const networkId = x402NetworkId();
       const signer = createClientHederaSigner(
         c.HEDERA_OPERATOR_ID,
-        PrivateKey.fromStringECDSA(c.HEDERA_OPERATOR_KEY),
+        PrivateKey.fromStringECDSA(operatorKey),
         { network: networkId },
       );
       const scheme = new ExactHederaScheme(signer);
