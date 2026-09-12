@@ -48,7 +48,7 @@ plans 05–12 merged. Read `.agents/plans/plan-00-architecture.md` (§B.1, §F e
 - [x] Every revoke emits `capability.revoked`; projection row appears; trace EVENTS tab shows it. (hardening13 + capability tests, green)
 - [x] `LEDGER_PROVIDER=ledger` without ring → boot fails fast with actionable message; bare-ref pay fails as `OPERATOR_KEY_NOT_PROTECTED` with server-side cause. (unit tests green + LIVE `next dev` probe: server logs the EXACT message and exits; normal dev boot 200)
 - [x] `origin` labels persist + render distinctly; server path sets `server-minted`. (SSR render tests + mocked-SDK write-side test, green)
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green. No schema changes. No engine changes. No new reason codes. No behavior change on happy paths (full suite green proves it).
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green. No schema changes. No engine changes. No new reason codes. No behavior change on happy paths (full suite green proves it). — typecheck clean; lint exit 0 (2 pre-existing warnings); suite 155 pass / 2 skip / 1 pre-existing env-gated failure (treasury live-key: LANGSMITH_API_KEY 401s on /runs in this worktree; fails identically with plan-13 changes reverted — not this wave's regression; key needs refresh). Schema/engine/reason-codes untouched; full green elsewhere proves happy paths.
 
 ## Out of scope
 
