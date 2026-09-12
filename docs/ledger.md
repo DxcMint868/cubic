@@ -57,9 +57,16 @@ and a one-time `wallet-cli ring init` with a device attached.
 ## Dev path (default)
 
 `DevApprovalProvider` (`app/src/server/gateway/approval/provider.ts`, plan-02)
-inserts a pending `provider:"dev"` approvals row. `SecretProtector` has **no**
-dev implementation — dev mode simply does not protect secrets under hardware;
-there is nothing to confuse with the Key Ring.
+inserts a pending `provider:"dev"` approvals row. Secret reads funnel through
+one `SecretProtector` seam (`getSecretProtector()` in
+`app/src/server/ledger/dev.ts`): the dev backend returns env plaintext
+(labeled in the logs), provides **zero protection**, and exists to hold the
+seam. Backend *selection* is one env var (`LEDGER_PROVIDER`); under `ledger`,
+reads decrypt via the Key Ring at rest — but callers that pass bare env names
+(like the payment operator key today) must first be re-protected into `ring:`
+refs before the ledger backend can serve them; that migration is not done in
+this wave, and an unprovisioned ledger backend fails loudly (never falls back
+silently to dev).
 
 ## Demo hook
 

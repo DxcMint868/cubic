@@ -37,6 +37,9 @@ allowed to do."
       portal.hedera.com well above that before the take
 - [ ] `LEDGER_PROVIDER` unset (= `dev`): approvals resolve via the resolve
       route, narrated as the stand-in (see Beat 5)
+- [ ] Bypass flags clear: the preflight now aborts unless `X402_DEV_BYPASS`
+      and `X402_SIMULATE_FAILURE` are unset or `"0"` — a real take never runs
+      with them on (don't be surprised by the abort; unset them and re-run)
 - [ ] Swarm optional: `pnpm --filter app swarm` in a second terminal for the
       Beat 7 zoom-out backdrop
 
