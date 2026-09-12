@@ -161,9 +161,13 @@ beforeAll(async () => {
       const cent = rate.current_rate?.cent_equivalent;
       const hbar = rate.current_rate?.hbar_equivalent;
       const balRes = await fetch(
-        `https://testnet.mirrornode.hedera.com/api/v1/accounts/${encodeURIComponent(c.HEDERA_OPERATOR_ID!)}?balance=true`,
+        `https://testnet.mirrornode.hedera.com/api/v1/accounts/${encodeURIComponent(c.HEDERA_OPERATOR_ID!)}`,
         { signal: AbortSignal.timeout(5000) },
       );
+      if (!balRes.ok) {
+        console.warn("[e2e.demo] skipping live chain: mirror balance lookup failed (blocked-on-env)");
+        return;
+      }
       const bal = (await balRes.json()) as { balance?: { balance?: number } };
       const required = typeof cent === "number" && typeof hbar === "number" && cent > 0 && hbar > 0
         ? Math.max(1, Math.round((25 * hbar * 1e8) / cent))
