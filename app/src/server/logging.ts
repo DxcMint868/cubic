@@ -18,17 +18,36 @@ function jsonFormat(): boolean {
   return (process.env.LOG_FORMAT ?? "text").toLowerCase() === "json";
 }
 
-const SECRET_KEY = /token|secret|password|credential|private_key|api_key|operator_key/i;
+// plan-13 EXACT — THE one secret-key pattern, shared by logging.ts and
+// gateway/ingest.ts. Matches camelCase holders too (operatorKey, apiKey,
+// privateKey) via the [_-]? alternates.
+export const SECRET_KEY_RE = /token|secret|password|credential|private[_-]?key|api[_-]?key|operator[_-]?key/i;
+
+// plan-13: raw error text is only ever logged, never surfaced — so string
+// meta values are scrubbed of secret-ish `key: value` / `key=value` pairs
+// before printing. The alternation is wrapped in a group (and extended to the
+// full surrounding key token) so the `[:=] value` suffix binds to the whole
+// key, not just the last alternative; benign words like "secretary" without
+// a separator never match. Built from SECRET_KEY_RE, the single source of truth.
+const SECRET_PAIR_RE = new RegExp(
+  `([A-Za-z0-9_-]*(?:${SECRET_KEY_RE.source})[A-Za-z0-9_-]*)\\s*[:=]\\s*[^\\s,;"}]+`,
+  "gi",
+);
+
+export function redactText(text: string): string {
+  return text.replace(SECRET_PAIR_RE, (_match, key: string) => `${key}=[REDACTED]`);
+}
 
 export function redactMeta(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactMeta);
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = SECRET_KEY.test(k) ? "[REDACTED]" : redactMeta(v);
+      out[k] = SECRET_KEY_RE.test(k) ? "[REDACTED]" : redactMeta(v);
     }
     return out;
   }
+  if (typeof value === "string") return redactText(value);
   return value;
 }
 

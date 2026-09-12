@@ -4,6 +4,7 @@ import { config } from "../config";
 import { db } from "../db/client";
 import { agents, intents, tasks, tenants, tools } from "../db/schema";
 import { emit } from "../events/bus";
+import { SECRET_KEY_RE } from "../logging";
 import type { ApiErrorCode, RiskClass, ToolCall } from "../domain";
 
 export class GatewayError extends Error {
@@ -19,17 +20,18 @@ const toolCallSchema = z.object({
   arguments: z.record(z.string(), z.unknown()),
 });
 
-const SECRET_KEY = /token|secret|password|credential|private_key/i;
-
-// plan-02 EXACT: recursively walk `arguments` — plain objects at depth ≤ 3 are walked
-// (arrays mapped without consuming depth); secret-ish keys → "[REDACTED]".
-function redact(value: unknown, depth = 0): unknown {
-  if (Array.isArray(value)) return value.map((v) => redact(v, depth));
+// plan-02 EXACT, plan-13 hardening: recursively walk `arguments` with NO depth
+// cutoff (the plan-02 depth>3 cutoff could silently persist nested secrets at
+// depth 4+; arguments arrive JSON-parsed so full recursion terminates) —
+// cycle-guarded for non-JSON object graphs. Secret-ish keys → "[REDACTED]".
+function redact(value: unknown, seen = new Set<object>()): unknown {
+  if (Array.isArray(value)) return value.map((v) => redact(v, seen));
   if (value !== null && typeof value === "object") {
-    if (depth > 3) return value;
+    if (seen.has(value)) return "[CYCLIC]";
+    seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = SECRET_KEY.test(key) ? "[REDACTED]" : redact(val, depth + 1);
+      out[key] = SECRET_KEY_RE.test(key) ? "[REDACTED]" : redact(val, seen);
     }
     return out;
   }
