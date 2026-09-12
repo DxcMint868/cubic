@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { logger } from "../logging";
+import { logger, redactText } from "../logging";
 import { getSecretProtector } from "../ledger/provider";
 
 const log = logger("x402");
@@ -233,7 +233,17 @@ export class HederaX402Provider implements PaymentProvider {
       const { ExactHederaScheme } = await import("@x402/hedera/exact/client");
       // plan-12: the operator key is read ONLY through the SecretProtector
       // seam (dev backend = labeled env plaintext; ledger backend = Key Ring).
-      const operatorKey = await getSecretProtector().use("HEDERA_OPERATOR_KEY");
+      // plan-13: until the ring: migration lands, a bare env-name ref throws
+      // under the keyring backend — surface the explicit migration code (not
+      // generic SETTLEMENT_ERROR), cause logged server-side only.
+      let operatorKey: string;
+      try {
+        operatorKey = await getSecretProtector().use("HEDERA_OPERATOR_KEY");
+      } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err);
+        log.warn("operator key read failed — not protected under this backend", { cause: cause ? redactText(cause) : cause });
+        return { status: "failed", error_code: "OPERATOR_KEY_NOT_PROTECTED" };
+      }
       const networkId = x402NetworkId();
       const signer = createClientHederaSigner(
         c.HEDERA_OPERATOR_ID,
@@ -265,9 +275,15 @@ export class HederaX402Provider implements PaymentProvider {
       });
       const verify = (await verifyRes.json().catch(() => null)) as { isValid?: boolean; invalidReason?: string } | null;
       if (!verifyRes.ok || !verify || verify.isValid !== true) {
-        const errorCode = `VERIFY_REJECTED${verify?.invalidReason ? `:${verify.invalidReason}` : ""}`;
-        log.warn("payment rejected at verify", { amount_usd_cents: input.amount_usd_cents, error_code: errorCode });
-        return { status: "failed", error_code: errorCode };
+        // plan-13: the facilitator's invalidReason is external free text — it
+        // stays server-side in the log; the code returned to agents/event
+        // payloads is the fixed enum only (the closed set holds at the emit
+        // boundary).
+        log.warn("payment rejected at verify", {
+          amount_usd_cents: input.amount_usd_cents,
+          invalid_reason: verify?.invalidReason ?? null,
+        });
+        return { status: "failed", error_code: "VERIFY_REJECTED" };
       }
 
       const settleRes = await fetch(`${base}/settle`, {
@@ -282,12 +298,13 @@ export class HederaX402Provider implements PaymentProvider {
         errorReason?: string;
       } | null;
       if (!settleRes.ok || !settle || settle.success !== true || typeof settle.transaction !== "string" || settle.transaction === "") {
-        const errorCode = `SETTLEMENT_FAILED${settle?.errorReason ? `:${settle.errorReason}` : ""}`;
-        log.warn("payment failed at settle", { amount_usd_cents: input.amount_usd_cents, error_code: errorCode });
-        return {
-          status: "failed",
-          error_code: errorCode,
-        };
+        // plan-13: settle.errorReason is external free text — logged
+        // server-side only; agents and event payloads get the fixed enum.
+        log.warn("payment failed at settle", {
+          amount_usd_cents: input.amount_usd_cents,
+          error_reason: settle?.errorReason ?? null,
+        });
+        return { status: "failed", error_code: "SETTLEMENT_FAILED" };
       }
       this.settled.set(settle.transaction, requirements);
       if (this.settled.size > 1000) {

@@ -477,6 +477,8 @@ export function eventSummary(event: AuditEvent): string {
       return `consumed ${shortId(asString(payload.capability_id))}`;
     case "capability.rejected":
       return `rejected · ${asString(payload.reason) ?? "?"}`;
+    case "capability.revoked": // plan-13: the sanctioned 18th event type
+      return `revoked · ${asString(payload.reason) ?? "?"}`;
     case "ledger.approval.requested":
       return `${asString(payload.provider) ?? "?"} · ${asString(payload.action) ?? "?"}${
         asString(payload.resource) ? ` · ${asString(payload.resource)}` : ""

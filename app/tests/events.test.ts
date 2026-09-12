@@ -16,6 +16,7 @@ const samples: Record<string, Record<string, unknown>> = {
   "capability.escalated": { intent_id: randomUUID(), decision_id: randomUUID(), approval_id: randomUUID(), reason_codes: ["risk_requires_approval"] },
   "capability.consumed": { capability_id: randomUUID(), execution_id: null },
   "capability.rejected": { capability_id: null, reason: "expired", requested_action: null, requested_resource: null },
+  "capability.revoked": { capability_id: randomUUID(), reason: "payment_failed" },
   "ledger.approval.requested": { approval_id: randomUUID(), decision_id: randomUUID(), provider: "dev", action: "merge_pull_request", resource: "acme/backend#421" },
   "ledger.approval.completed": { approval_id: randomUUID(), decision_id: randomUUID(), provider: "dev", outcome: "approved" },
   "payment.requested": { payment_id: randomUUID(), capability_id: randomUUID(), service: "scanner", network: "hedera", amount_usd_cents: 25 },
@@ -46,8 +47,8 @@ afterAll(async () => {
 });
 
 describe("emit", () => {
-  it("every one of the 17 event types has a sample", () => {
-    expect([...eventTypes]).toHaveLength(17);
+  it("every one of the 18 event types has a sample (17 canonical + plan-13 capability.revoked addendum)", () => {
+    expect([...eventTypes]).toHaveLength(18);
     expect(Object.keys(samples).sort()).toEqual([...eventTypes].sort());
   });
 

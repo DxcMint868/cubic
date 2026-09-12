@@ -78,15 +78,24 @@ function reasonText(entry: TraceChainEntry): string {
 // intent.normalized. Anything malformed → null (no link, never a dead one).
 // The writer (reasoning/langsmith.ts) enforces uuid + https; the reader
 // additionally refuses non-http(s) URLs so even a foreign row can never
-// render a javascript:/data: hyperlink.
-function reasoningRefOf(normalized: unknown): { run_id: string; share_url: string | null } | null {
+// render a javascript:/data: hyperlink. plan-13: also reads the origin label
+// ("client-supplied" | "server-minted"); pre-plan-13 rows render untagged.
+function reasoningRefOf(normalized: unknown): {
+  run_id: string;
+  share_url: string | null;
+  origin: "client-supplied" | "server-minted" | null;
+} | null {
   if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) return null;
   const ref = (normalized as { reasoning_ref?: unknown }).reasoning_ref;
   if (!ref || typeof ref !== "object" || Array.isArray(ref)) return null;
-  const { run_id, share_url } = ref as Record<string, unknown>;
+  const { run_id, share_url, origin } = ref as Record<string, unknown>;
   if (typeof run_id !== "string" || run_id.length === 0) return null;
   if (typeof share_url === "string" && share_url.length > 0 && !share_url.startsWith("http")) return null;
-  return { run_id, share_url: typeof share_url === "string" && share_url.length > 0 ? share_url : null };
+  return {
+    run_id,
+    share_url: typeof share_url === "string" && share_url.length > 0 ? share_url : null,
+    origin: origin === "client-supplied" || origin === "server-minted" ? origin : null,
+  };
 }
 
 // plan-12: approver identity is event-sourced — join the trace events array
@@ -221,14 +230,19 @@ export function ChainEntry({
           <KV
             k="AI TRACE"
             v={
-              <a
-                href={aiTrace.share_url ?? `https://smith.langchain.com/runs/${aiTrace.run_id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="link"
-              >
-                View AI Trace (LangSmith) →
-              </a>
+              <>
+                {/* plan-13: a client-supplied ref is NOT the server's own
+                    reasoning — tag it so it never reads as a trusted link. */}
+                {aiTrace.origin === "client-supplied" && <Tag>CLIENT</Tag>}{" "}
+                <a
+                  href={aiTrace.share_url ?? `https://smith.langchain.com/runs/${aiTrace.run_id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="link"
+                >
+                  View AI Trace (LangSmith) →
+                </a>
+              </>
             }
           />
         )}

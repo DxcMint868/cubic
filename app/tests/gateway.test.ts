@@ -304,7 +304,7 @@ describe("plan-02 gateway", () => {
     expect(body.data.events[0].event_type).toBe("intent.created");
   }, 30000);
 
-  it("redaction walks plain objects to depth 3 and sees through arrays", async () => {
+  it("redaction walks plain objects at ANY depth (plan-13: no cutoff) and sees through arrays", async () => {
     setContextProvider(withReputation(0.95));
     const result = await call(
       "github.get_pull_request",
@@ -323,9 +323,10 @@ describe("plan-02 gateway", () => {
     expect((redacted.a as { b: { c: { api_token: string } } }).b.c.api_token).toBe("[REDACTED]");
     expect((redacted.list as { github_token: string }[])[0].github_token).toBe("[REDACTED]");
     expect(redacted.repo).toBe("acme/backend");
-    const untouched = (redacted.deep as { nested: { deeper: { deepest: { password: string } } } })
+    const deepest = (redacted.deep as { nested: { deeper: { deepest: { password: string } } } })
       .nested.deeper.deepest;
-    expect(untouched.password).toBe("t3"); // depth > 3: beyond the walk, values pass through verbatim
+    // plan-13: the depth>3 cutoff is gone — nested secrets can never persist
+    expect(deepest.password).toBe("[REDACTED]");
   }, 30000);
 
   it("GET /api/audit/events filters by task_id, event_type and limit", async () => {

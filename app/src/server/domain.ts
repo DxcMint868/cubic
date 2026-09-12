@@ -19,7 +19,11 @@ export interface NormalizedIntent {
   // reasoning trace for this normalization — a real LangSmith run id (plus a
   // best-effort public share URL) when the LLM-assist path ran with a key,
   // otherwise null. Never mocked, never fabricated: real or absent.
-  reasoning_ref?: { run_id: string; share_url: string | null; model?: string } | null;
+  // plan-13 contract addendum (sanctioned): `origin` labels who minted the
+  // ref — "client-supplied" (agent's ToolCall.arguments.reasoning_ref) or
+  // "server-minted" (the LangSmith assist path). Writers always set it;
+  // optional in the type so pre-plan-13 rows stay readable.
+  reasoning_ref?: { run_id: string; share_url: string | null; model?: string; origin?: "client-supplied" | "server-minted" } | null;
 }
 
 export interface Facts {

@@ -3,6 +3,7 @@ import { z } from "zod";
 const _eventTypes = [
   "intent.created", "policy.evaluated", "capability.issued", "capability.denied",
   "capability.escalated", "capability.consumed", "capability.rejected",
+  "capability.revoked",
   "ledger.approval.requested", "ledger.approval.completed",
   "payment.requested", "payment.completed", "payment.failed", "service.discovered",
   "tool.execution.started", "tool.execution.completed", "tool.execution.failed",
@@ -23,6 +24,9 @@ export const payloadSchemas: Record<EventType, z.ZodTypeAny> = {
   "capability.escalated": z.object({ intent_id: uuid, decision_id: uuid, approval_id: uuid, reason_codes: z.array(z.string()) }),
   "capability.consumed": z.object({ capability_id: uuid, execution_id: uuid.nullable() }),
   "capability.rejected": z.object({ capability_id: uuid.nullable(), reason: z.enum(["not_found", "replay", "expired", "action_mismatch", "resource_mismatch", "budget_exceeded"]), requested_action: z.string().nullable(), requested_resource: z.string().nullable() }),
+  // plan-13 contract addendum (sanctioned, same precedent as resolved_by):
+  // revokes are no longer DB-only — every revoke path emits this.
+  "capability.revoked": z.object({ capability_id: uuid, reason: z.string() }),
   "ledger.approval.requested": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), action: z.string(), resource: z.string() }),
   "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().optional() }),
   "payment.requested": z.object({ payment_id: uuid, capability_id: uuid, service: z.string(), network: z.literal("hedera"), amount_usd_cents: z.number().int() }),

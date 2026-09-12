@@ -22,6 +22,7 @@ const EVENT_TYPES = [
   "capability.escalated",
   "capability.consumed",
   "capability.rejected",
+  "capability.revoked",
   "ledger.approval.requested",
   "ledger.approval.completed",
   "payment.requested",

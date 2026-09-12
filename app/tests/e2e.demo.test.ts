@@ -244,7 +244,10 @@ describe("plan-10 happy path: ordered event chain", () => {
       "intent.created", "policy.evaluated", "capability.issued",
       "service.discovered",
       "payment.requested", "payment.completed",
-      "capability.issued", "tool.execution.started", "tool.execution.completed",
+      // plan-13 note: the purchase consumes the capability runExecutionPhase
+      // issued pre-payment (W5 merge restructure) — there is no post-payment
+      // re-issue; the purchase execution reads consumed → started → completed.
+      "capability.consumed", "tool.execution.started", "tool.execution.completed",
       "capability.escalated", "ledger.approval.requested", "ledger.approval.completed",
       "capability.issued", "tool.execution.completed",
       "capability.escalated", "ledger.approval.requested", "ledger.approval.completed",

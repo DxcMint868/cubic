@@ -2,6 +2,9 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { capabilities, decisions, intents, tasks } from "../db/schema";
 import { emit } from "../events/bus";
+import { logger } from "../logging";
+
+const log = logger("capability");
 
 export type ConsumeResult =
   | { status: "consumed"; capability_id: string }
@@ -133,11 +136,47 @@ export async function verifyCapability(
   return { status: "issued" };
 }
 
-export async function revokeCapability(capabilityId: string): Promise<boolean> {
+// plan-13 EXACT: single revoke funnel — every caller (orchestrator
+// failPayment, post-settle rejection, future paths) routes through here, so
+// the capability.revoked event is emitted in exactly one place. Emission
+// follows the capability.consumed pattern: only on a real issued→revoked
+// flip, attributed through decision → intent → task; without that chain the
+// event has no tenant to attach to and is skipped.
+export async function revokeCapability(capabilityId: string, reason = "unspecified"): Promise<boolean> {
   const updated = await db()
     .update(capabilities)
     .set({ status: "revoked" })
     .where(and(eq(capabilities.id, capabilityId), eq(capabilities.status, "issued")))
     .returning({ id: capabilities.id });
-  return updated.length > 0;
+  if (updated.length === 0) return false;
+  const [row] = await db().select().from(capabilities).where(eq(capabilities.id, capabilityId));
+  if (row) {
+    const [decisionRow] = await db().select().from(decisions).where(eq(decisions.id, row.decisionId));
+    const [intentRow] = decisionRow
+      ? await db().select().from(intents).where(eq(intents.id, decisionRow.intentId))
+      : [];
+    const [taskRow] = intentRow?.taskId
+      ? await db().select().from(tasks).where(eq(tasks.id, intentRow.taskId))
+      : [];
+    if (taskRow && intentRow) {
+      await emit(
+        {
+          event_type: "capability.revoked",
+          tenant_id: taskRow.tenantId,
+          task_id: intentRow.taskId,
+          agent_id: intentRow.agentId,
+          payload: { capability_id: row.id, reason },
+        },
+        { agent_key: row.subject },
+      );
+    } else {
+      // plan-13: a revoke is never fully silent — when the attribution chain
+      // is missing the revoke still happened, so log it loudly server-side.
+      log.warn("capability revoked without attribution chain — event skipped", {
+        capability_id: row.id,
+        reason,
+      });
+    }
+  }
+  return true;
 }

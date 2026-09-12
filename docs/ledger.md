@@ -92,3 +92,92 @@ curl -X POST localhost:3000/api/approvals/<approval_id>/resolve \
 `provider:"dev"` canary, and asserts `LedgerKeyRingProvider` throws (never
 falls back) when wallet-cli cannot operate. Ring round-trip tests skip
 cleanly unless the Key Ring is actually provisioned on the host.
+
+## Boot gate (plan-13)
+
+Under `LEDGER_PROVIDER=ledger`, gateway boot asserts the Key Ring is
+provisioned (`ringProvisioned()` — a local-cache read, no device) and fails
+fast with `Key Ring not provisioned — run wallet-cli ring init on a device
+host` instead of serving a half-broken gateway
+that would fail opaquely per payment. The dev boot path is untouched
+(set `LEDGER_PROVIDER=dev` to leave the ledger path).
+
+## Operator-key migration status (plan-13)
+
+The payment authority (`HEDERA_OPERATOR_KEY`) is still read as a bare env
+name. Under `LEDGER_PROVIDER=ledger` that bare ref throws inside the Key
+Ring backend, and the payment surfaces the explicit
+`OPERATOR_KEY_NOT_PROTECTED` error code (cause logged server-side only) —
+never a generic settlement error. Migrating the key into a `ring:` ref needs
+a provisioned device host (human-gated, documented-blocked above).
+
+## Key-compromise runbook (plan-13)
+
+If the operator payment key leaks (committed, logged, or otherwise exposed):
+
+1. **Rotate at Hedera first.** Create a new ECDSA key pair, update the
+   operator account's key on Hedera (account key update transaction), then
+   update `HEDERA_OPERATOR_KEY` in **every** `app/.env.local` and the demo
+   shell environment.
+2. **Restart ALL gateway processes.** Config is memoized per process
+   (`globalThis.__cubicConfig`) and caches are per-process — a rolling env
+   edit does nothing until every `next dev`/`next start`/demo agent process
+   is restarted.
+3. **Preflight.** Run the demo preflight (`pnpm --filter app demo`) to
+   confirm the new key settles a real challenge before resuming any live
+   flow.
+4. **Audit the exposure window.** Query settlements between first-possible
+   leak and rotation; investigate anything you did not initiate. See the
+   exposure-window query below; also grep `audit_events` for unexpected
+   `payment.completed` payloads in the window.
+
+What this runbook **cannot** do, stated plainly:
+
+- **Revoke signatures already made.** A compromised key that signed a
+  transfer before rotation cannot be un-signed; blocky402 facilitator
+  settlements are final.
+- **Claw back funds.** Hedera transfers are irreversible; recovery means
+  contacting the receiving account, not on-chain rollback.
+- **Rotate without downtime.** Between the Hedera key update and the
+  gateway restart, payments fail (`OPERATOR_NOT_CONFIGURED` /
+  `OPERATOR_KEY_NOT_PROTECTED`) — plan for a maintenance window.
+
+### Exposure-window query (PostgreSQL, `payments` + `audit_events`)
+
+Settlements in a suspected window `[start, end)` (UTC ISO-8601), with the
+task chain via capability → decision → intent:
+
+```sql
+SELECT p.id              AS payment_id,
+       p.status,
+       p.x402_ref        AS settlement_ref,
+       p.amount_usd_cents,
+       p.settled_at,
+       i.task_id,
+       a.agent_key
+FROM payments p
+LEFT JOIN capabilities c ON c.id = p.capability_id
+LEFT JOIN decisions d    ON d.id = c.decision_id
+LEFT JOIN intents i      ON i.id = d.intent_id
+LEFT JOIN agents a       ON a.id = i.agent_id
+WHERE p.settled_at >= '<start_utc>'
+  AND p.settled_at <  '<end_utc>'
+ORDER BY p.settled_at;
+```
+
+Cross-check against the immutable event log (includes failed/attempted
+settlements the payments rows may not show):
+
+```sql
+SELECT created_at, event_type, payload->>'settlement_ref' AS ref, payload
+FROM audit_events
+WHERE event_type IN ('payment.completed', 'payment.failed', 'payment.requested')
+  AND created_at >= '<start_utc>'
+  AND created_at <  '<end_utc>'
+ORDER BY created_at;
+```
+
+Any `settlement_ref` you cannot match to a deliberate demo/scan run is a
+rogue settlement — treat the key as compromised, rotate immediately, and
+report the refs to the receiving account's operator (the merchant account
+`X402_PAY_TO_ACCOUNT` holder) for tracing.

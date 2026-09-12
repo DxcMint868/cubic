@@ -264,7 +264,8 @@ describe("plan-11 reasoning_ref", () => {
     };
     expect(body.ok).toBe(true);
     const entry = body.data.chain.find((c) => c.intent.id === (r.ok && r.data.intent_id));
-    expect(entry?.intent.normalized.reasoning_ref).toEqual(ref);
+    // plan-13: client-supplied refs persist WITH the origin label
+    expect(entry?.intent.normalized.reasoning_ref).toEqual({ ...ref, origin: "client-supplied" });
   }, 30000);
 
   it("key absent → null, no link, no throw (rules-only path)", async () => {
