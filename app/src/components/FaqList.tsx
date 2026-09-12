@@ -33,7 +33,7 @@ const QA: { q: string; a: string[] }[] = [
   {
     q: "What happens to high-risk actions?",
     a: [
-      "They escalate. Production deploys, fund movements, and anything over a spend cap pause in the approvals queue until a human approves — high-risk rows require Ledger hardware approval through Key Ring before a capability is issued. Low-risk reads keep flowing autonomously.",
+      "They escalate. Production deploys, fund movements, and anything over a spend cap pause in the approvals queue until a human approves — wired for Ledger Key Ring approval on provisioned hosts; this demo runs the in-app dev stand-in. Low-risk reads keep flowing autonomously.",
     ],
   },
   {

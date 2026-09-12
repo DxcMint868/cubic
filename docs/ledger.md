@@ -34,6 +34,11 @@ Spike findings (2026-09-10, macOS host, see
   its success-path parsing is unverified until a provisioned ring exists.
 - After provisioning, `ring encrypt` / `ring decrypt` (AES-256-GCM under a
   Key Ring key) work without the device; `ring keys` is a local-cache read.
+- Emulator evaluation (2026-09-12, recorded so the decision isn't lore):
+  Speculos emulates device apps over APDU/TCP, but `wallet-cli` speaks USB HID
+  only (no Speculos transport, no flags for it in v2.1.0) and covers
+  bitcoin/ethereum/solana only — not Hedera. So emulation cannot serve our
+  chain or our CLI; the ring path stays blocked pending a real device.
 
 `LedgerKeyRingProvider` (`app/src/server/ledger/keyring.ts`) implements both
 plan-06 interfaces against those pinned subcommands:
