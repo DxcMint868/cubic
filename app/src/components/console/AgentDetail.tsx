@@ -6,6 +6,7 @@ import {
   DecisionTag,
   EmptyState,
   ErrorWindow,
+  Panel,
   Skeleton,
   Tag,
 } from "@/components/ConsoleBits";
@@ -150,17 +151,16 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
         </Link>
       </div>
 
-      <div
-        className="mono"
-        style={{
-          marginTop: 26,
-          paddingTop: 22,
-          borderTop: "1px solid rgba(255,255,255,0.1)",
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
-          gap: "20px 28px",
-        }}
-      >
+      <div style={{ marginTop: 26 }}>
+        <Panel title="AGENT — OVERVIEW">
+          <div
+            className="mono"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+              gap: "20px 28px",
+            }}
+          >
         {[
           {
             value:
@@ -186,14 +186,18 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
                 color: "#5a5a5a",
               }}
             >
-              {stat.label}
+            {stat.label}
+              </div>
             </div>
+          ))}
           </div>
-        ))}
+        </Panel>
       </div>
 
-      <div style={{ marginTop: 30, display: "grid", gap: 16 }}>
-        {data.traces.map((trace) => {
+      <div style={{ marginTop: 20 }}>
+        <Panel title="AGENT — TASKS">
+          <div style={{ display: "grid", gap: 16 }}>
+            {data.traces.map((trace) => {
           const entry = trace.chain[0];
           const decisions = trace.chain.filter((chainEntry) => chainEntry.decision !== null);
           return (
@@ -266,6 +270,8 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
             </div>
           );
         })}
+          </div>
+        </Panel>
       </div>
     </div>
   );

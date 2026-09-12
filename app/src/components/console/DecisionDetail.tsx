@@ -5,6 +5,7 @@ import {
   DecisionTag,
   EmptyState,
   ErrorWindow,
+  Panel,
   Skeleton,
   Tag,
 } from "@/components/ConsoleBits";
@@ -183,16 +184,14 @@ export default function DecisionDetail({ decisionId }: { decisionId: string }) {
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: 26,
-          border: "1px solid #1f1f1f",
-          borderRadius: 10,
-          padding: "22px 22px 24px",
-          display: "grid",
-          gap: 14,
-        }}
-      >
+      <div style={{ marginTop: 26 }}>
+        <Panel title="DECISION — DETAIL">
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+            }}
+          >
         <KV k="TASK" v={`${data.taskTitle} · ${data.taskStatus.toUpperCase()}`} />
         <KV k="INTENT" v={`${intent.tool} · ${intent.resource ?? "—"}`} />
         <KV k="MATCHED POLICY" v={decision?.matched_policy ?? "—"} />
@@ -217,21 +216,18 @@ export default function DecisionDetail({ decisionId }: { decisionId: string }) {
         />
         <KV k="CONTEXT HASH" v={`${shortId(decision?.context_snapshot_hash, 20)}…`} />
         <KV k="DECIDED AT" v={fmtDateTime(decision?.created_at)} />
+          </div>
+        </Panel>
       </div>
 
-      <div
-        style={{
-          marginTop: 20,
-          border: "1px solid #1f1f1f",
-          borderRadius: 10,
-          padding: "22px 22px 24px",
-          display: "grid",
-          gap: 14,
-        }}
-      >
-        <p className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#8a8a8a" }}>
-          CONSEQUENCES
-        </p>
+      <div style={{ marginTop: 20 }}>
+        <Panel title="DECISION — CONSEQUENCES">
+          <div
+            style={{
+              display: "grid",
+              gap: 14,
+            }}
+          >
         {capability ? (
           <>
             <KV k="CAPABILITY" v={`${capability.action} · ${capability.resource}`} />
@@ -284,6 +280,8 @@ export default function DecisionDetail({ decisionId }: { decisionId: string }) {
           {capability && <Tag>CAPABILITY {shortId(capability.id, 8)}</Tag>}
           {approvals.length > 0 && <Tag>{approvals.length} APPROVAL</Tag>}
         </div>
+          </div>
+        </Panel>
       </div>
     </div>
   );

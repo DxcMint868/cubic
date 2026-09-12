@@ -197,7 +197,7 @@ export default function NetworkPage() {
         >
           <Stat value={counters ? String(counters.agents_observed) : "—"} label="AGENTS OBSERVED" />
           <Stat value={counters ? String(counters.intents_evaluated) : "—"} label="INTENTS EVALUATED" />
-          <Stat value={counters ? String(counters.allowed) : "—"} label="AUTHORIZED" />
+          <Stat value={counters ? String(counters.allowed) : "—"} label="ALLOWED" />
           <Stat value={counters ? String(counters.denied) : "—"} label="DENIED" />
           <Stat value={counters ? String(counters.escalated) : "—"} label="ESCALATED" />
           <Stat

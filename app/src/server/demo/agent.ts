@@ -235,7 +235,7 @@ async function happyPath(): Promise<void> {
 
   // 11. Trace URL + beat summary (Beat 7: the same events feed /network live).
   say("\n[11/11] Trace + beat summary (Beat 7 — these events are live in /network):");
-  say(`        trace: ${BASE_URL}/api/audit/trace/${taskId}`);
+  say(`        trace: ${BASE_URL}/api/audit/trace/${taskId}, ${BASE_URL}/console/tasks/${taskId}`);
   say("        +-------+-----------------------------------------------+----------+");
   say("        | beat  | step                                          | outcome  |");
   say("        +-------+-----------------------------------------------+----------+");

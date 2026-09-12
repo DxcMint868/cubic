@@ -109,6 +109,7 @@ export async function POST() {
       data: {
         task_id: taskId,
         trace_path: `/api/audit/trace/${taskId}`,
+        console_path: `/console/tasks/${taskId}`,
         settlement_ref: settlementRef,
         beats: [
           { beat: 2, step: "read PR through the gateway", outcome: "ALLOW" },
