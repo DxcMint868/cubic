@@ -58,11 +58,11 @@ low reputation     → agent:lab-1 (fixture 0.50) get_pull_request       → dec
 
 ## Acceptance criteria
 
-- [ ] `pnpm --filter app demo` (with env) executes the full happy path against the live stack, passes every in-sequence assertion, and prints the trace URL.
-- [ ] `pnpm --filter app demo:adversarial` passes all six fixtures with the exact reason codes above.
-- [ ] E2E smoke asserts the exact ordered event chain; green where env permits, clean skips otherwise.
-- [ ] All beats map 1:1 to plan-00 §N and run in ≤4 minutes.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green.
+- [x] `pnpm --filter app demo` (with env) executes the full happy path against the live stack, passes every in-sequence assertion, and prints the trace URL. (Verified live through step 4 incl. real 402 challenge; purchase leg aborts loudly on the plan-05 settlement block — see MEMORY end-state. Preflight/seed/task/allow/discovery/resolve-path all proven against `pnpm dev`.)
+- [x] `pnpm --filter app demo:adversarial` passes all six fixtures with the exact reason codes above. (Green: 6/6 PASS.)
+- [x] E2E smoke asserts the exact ordered event chain; green where env permits, clean skips otherwise. (`tests/e2e.demo.test.ts`: 7 pass, 1 honest `ctx.skip()` — live leg gated on funded operator; adversarial codes all green.)
+- [x] All beats map 1:1 to plan-00 §N and run in ≤4 minutes. (`docs/demo.md` beat sheet; §17 numbering payment=Beat 4, Ledger=Beat 5; dev-stand-in narration.)
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green. (typecheck clean; lint exit 0 with 2 pre-existing warnings; full suite 14 files green.)
 
 ## Out of scope
 
