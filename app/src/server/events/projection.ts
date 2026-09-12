@@ -17,7 +17,8 @@ import type { ProjectionMeta } from "./bus";
 import type { EventEnvelope, EventType } from "./types";
 
 // plan-08 EXACT — event_type → action_class. Only these event types project;
-// anything unmapped is skipped (all 17 canonical types are mapped today).
+// anything unmapped is skipped (all 17 canonical types plus the plan-13
+// sanctioned capability.revoked addendum are mapped).
 export const ACTION_CLASS: Record<EventType, string> = {
   "intent.created": "intent",
   "policy.evaluated": "evaluation",
@@ -26,6 +27,7 @@ export const ACTION_CLASS: Record<EventType, string> = {
   "capability.escalated": "authorization",
   "capability.consumed": "authorization",
   "capability.rejected": "authorization",
+  "capability.revoked": "authorization",
   "ledger.approval.requested": "approval",
   "ledger.approval.completed": "approval",
   "payment.requested": "payment",
@@ -55,6 +57,8 @@ export function outcomeFor(eventType: EventType, payload: Record<string, unknown
       return "consumed";
     case "capability.rejected":
       return String(payload.reason);
+    case "capability.revoked":
+      return "revoked";
     case "ledger.approval.requested":
       return "requested";
     case "ledger.approval.completed":
