@@ -15,6 +15,11 @@ export interface NormalizedIntent {
   risk_class: RiskClass;
   resource_class: "normal" | "secret" | "cross_task";
   amount_usd_cents?: number;           // present only for purchase intents
+  // plan-11 contract addendum (single sanctioned addition): linked AI
+  // reasoning trace for this normalization — a real LangSmith run id (plus a
+  // best-effort public share URL) when the LLM-assist path ran with a key,
+  // otherwise null. Never mocked, never fabricated: real or absent.
+  reasoning_ref?: { run_id: string; share_url: string | null; model?: string } | null;
 }
 
 export interface Facts {
