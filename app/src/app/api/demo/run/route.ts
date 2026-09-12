@@ -163,6 +163,9 @@ async function resolveApproval(approvalId: string): Promise<{
         decision_id: decisionRow.id,
         provider: config().LEDGER_PROVIDER,
         outcome: "approved",
+        // plan-12: demo/run takes no body — the internal helper defaults the
+        // approver identity, same value the resolve route defaults to.
+        resolved_by: "demo-operator",
       },
     },
     { agent_key: agentRow.agentKey, risk_class: intentRow.riskClass as RiskClass },

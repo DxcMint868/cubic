@@ -20,7 +20,7 @@ const HTTP_STATUS: Record<ApiErrorCode, number> = {
   INTERNAL: 500,
 };
 
-const bodySchema = z.object({ outcome: z.enum(["approved", "rejected"]) });
+const bodySchema = z.object({ outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().min(1).optional() });
 
 // plan-06 EXACT: resolve a pending approval; on approval, continue the plan-04
 // execution phase and respond with the full tool-call shape.
@@ -53,6 +53,10 @@ export async function POST(
       );
     }
     const outcome = parsed.data.outcome;
+    // plan-12: approver identity is event-sourced (no schema change) — the
+    // approval-completed event records who resolved it; default keeps the
+    // demo-operator attribution for body-less callers.
+    const resolvedBy = parsed.data.resolved_by ?? "demo-operator";
 
     const [approval] = await db().select().from(approvals).where(eq(approvals.id, id));
     if (!approval) {
@@ -98,6 +102,7 @@ export async function POST(
           decision_id: decisionRow.id,
           provider: config().LEDGER_PROVIDER,
           outcome,
+          resolved_by: resolvedBy,
         },
       },
       meta,

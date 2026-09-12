@@ -24,7 +24,7 @@ export const payloadSchemas: Record<EventType, z.ZodTypeAny> = {
   "capability.consumed": z.object({ capability_id: uuid, execution_id: uuid.nullable() }),
   "capability.rejected": z.object({ capability_id: uuid.nullable(), reason: z.enum(["not_found", "replay", "expired", "action_mismatch", "resource_mismatch", "budget_exceeded"]), requested_action: z.string().nullable(), requested_resource: z.string().nullable() }),
   "ledger.approval.requested": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), action: z.string(), resource: z.string() }),
-  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]) }),
+  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().optional() }),
   "payment.requested": z.object({ payment_id: uuid, capability_id: uuid, service: z.string(), network: z.literal("hedera"), amount_usd_cents: z.number().int() }),
   "payment.completed": z.object({ payment_id: uuid, capability_id: uuid, settlement_ref: z.string() }),
   "payment.failed": z.object({ payment_id: uuid, capability_id: uuid, error_code: z.string() }),
