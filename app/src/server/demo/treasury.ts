@@ -216,7 +216,7 @@ async function run(setTaskId: (id: string) => void, markClosed: () => void): Pro
 
   // 8. Trace + console URLs, beat table.
   say("\n[7/7] Trace + beat summary (same events stream to /network live):");
-  say(`        trace: ${BASE_URL}/api/audit/trace/${taskId}, /console/tasks/${taskId}`);
+  say(`        trace: ${BASE_URL}/api/audit/trace/${taskId}, ${BASE_URL}/console/tasks/${taskId}`);
   say("        +-------+-----------------------------------------------+----------+");
   say("        | beat  | step                                          | outcome  |");
   say("        +-------+-----------------------------------------------+----------+");
