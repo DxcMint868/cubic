@@ -1,4 +1,7 @@
 import { config } from "../config";
+import { logger } from "../logging";
+
+const log = logger("x402");
 
 // plan-05 EXACT — the payment-provider boundary. Implementations settle x402
 // challenges through Blocky402 on Hedera (server-side payment authority only).
@@ -45,9 +48,23 @@ export interface X402Challenge {
 
 // The merchant account the scanner revenue lands on. Optional env override for
 // real deployments; MVP default is the operator account itself.
+let payToNoticeDone = false;
 function payToAccount(): string | null {
   const envPayTo = process.env.X402_PAY_TO_ACCOUNT;
-  if (typeof envPayTo === "string" && envPayTo.trim() !== "") return envPayTo.trim();
+  if (typeof envPayTo === "string" && envPayTo.trim() !== "") {
+    if (!payToNoticeDone) {
+      payToNoticeDone = true;
+      log.info("merchant account in use", { pay_to: envPayTo.trim() });
+    }
+    return envPayTo.trim();
+  }
+  // Self-pay nets to zero and the facilitator rejects it with amount_mismatch
+  // — this warn is the exact misconfiguration that silently blocked settlement
+  // before the merchant account existed. Do not ignore it.
+  if (!payToNoticeDone) {
+    payToNoticeDone = true;
+    log.warn("X402_PAY_TO_ACCOUNT unset — payTo falls back to the operator (self-pay will fail at verify)");
+  }
   return config().HEDERA_OPERATOR_ID ?? null;
 }
 
@@ -244,7 +261,9 @@ export class HederaX402Provider implements PaymentProvider {
       });
       const verify = (await verifyRes.json().catch(() => null)) as { isValid?: boolean; invalidReason?: string } | null;
       if (!verifyRes.ok || !verify || verify.isValid !== true) {
-        return { status: "failed", error_code: `VERIFY_REJECTED${verify?.invalidReason ? `:${verify.invalidReason}` : ""}` };
+        const errorCode = `VERIFY_REJECTED${verify?.invalidReason ? `:${verify.invalidReason}` : ""}`;
+        log.warn("payment rejected at verify", { amount_usd_cents: input.amount_usd_cents, error_code: errorCode });
+        return { status: "failed", error_code: errorCode };
       }
 
       const settleRes = await fetch(`${base}/settle`, {
@@ -259,9 +278,11 @@ export class HederaX402Provider implements PaymentProvider {
         errorReason?: string;
       } | null;
       if (!settleRes.ok || !settle || settle.success !== true || typeof settle.transaction !== "string" || settle.transaction === "") {
+        const errorCode = `SETTLEMENT_FAILED${settle?.errorReason ? `:${settle.errorReason}` : ""}`;
+        log.warn("payment failed at settle", { amount_usd_cents: input.amount_usd_cents, error_code: errorCode });
         return {
           status: "failed",
-          error_code: `SETTLEMENT_FAILED${settle?.errorReason ? `:${settle.errorReason}` : ""}`,
+          error_code: errorCode,
         };
       }
       this.settled.set(settle.transaction, requirements);
@@ -269,8 +290,10 @@ export class HederaX402Provider implements PaymentProvider {
         const oldest = this.settled.keys().next().value;
         if (oldest) this.settled.delete(oldest);
       }
+      log.info("payment settled", { amount_usd_cents: input.amount_usd_cents, settlement_ref: settle.transaction });
       return { status: "completed", settlement_ref: settle.transaction };
     } catch {
+      log.warn("payment errored", { amount_usd_cents: input.amount_usd_cents, error_code: "SETTLEMENT_ERROR" });
       return { status: "failed", error_code: "SETTLEMENT_ERROR" };
     }
   }

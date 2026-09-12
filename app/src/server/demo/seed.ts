@@ -1,6 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { config } from "../config";
+import { logger } from "../logging";
 import { db } from "../db/client";
 import {
   tenants, agents, tools, policies, tasks, intents, decisions,
@@ -155,5 +156,7 @@ export async function seed(): Promise<{ agents: number; tools: number; policies:
   });
   await db().insert(tasks).values(taskRows);
 
-  return { agents: agentRows.length, tools: fixture.tools.length, policies: fixture.policies.length, tasks: taskRows.length };
+  const counts = { agents: agentRows.length, tools: fixture.tools.length, policies: fixture.policies.length, tasks: taskRows.length };
+  logger("seed").info("demo tenant reseeded", { tenant: fixture.tenant.slug, ...counts });
+  return counts;
 }
