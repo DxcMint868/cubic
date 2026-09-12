@@ -15,6 +15,9 @@ import { getContextProvider } from "./context/provider";
 import { getApprovalProvider } from "./approval/provider";
 import { ledgerApprovalProvider } from "../ledger/keyring";
 import { evaluate, selectPolicy, type Rule } from "./policy/engine";
+import { logger } from "../logging";
+
+const log = logger("gateway");
 
 // plan-00 §G tool-call shape; payment stage fills in as of plan-05 (purchase
 // wiring), stays null for non-purchase calls.
@@ -190,6 +193,10 @@ export async function runExecutionPhase(input: ExecutionPhaseInput): Promise<Exe
       .update(executions)
       .set({ status: "failed", error: outcome.threw, completedAt: new Date().toISOString() })
       .where(eq(executions.id, executionRow.id));
+    // Server-log the failure too: the DB row + audit event exist, but without
+    // this line a broken executor (e.g. an unhandled action) is invisible
+    // unless someone queries the trace.
+    log.error("executor threw", { tool, action: normalized.action, resource: normalized.resource, error: outcome.threw });
     await emit(
       {
         event_type: "tool.execution.failed",
