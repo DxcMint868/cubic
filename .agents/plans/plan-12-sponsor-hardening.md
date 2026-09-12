@@ -42,6 +42,7 @@ export function getSecretProtector(): SecretProtector {
 ```
 
    (`LedgerKeyRingProvider` already implements `SecretProtector` per plan-06 — verify the import resolves; if its shape drifted, adapt the factory, never the keyring.)
+   **CORRECTION (plan-12 executor, council-verified):** the EXACT block's final line `backend === "ledger"` is unreachable — `backend` is `"keyring" | "dev"` — and would fail AC 1. Implemented as `backend === "keyring"`; documented in code + final report.
    Route the operator-key read in `payments/x402.ts` (the `PrivateKey.fromStringECDSA(config().HEDERA_OPERATOR_KEY…)` site) through `await getSecretProtector().use("HEDERA_OPERATOR_KEY")`. The factory warn fires at boot (first payment path that calls it — log once via module-level memo), so the active backend is visible in every run log. The true claim, and no stronger: all secret reads funnel through one seam; dev returns env plaintext (labeled, zero protection); `ledger` decrypts via Key Ring at rest; the swap is one env var (`LEDGER_PROVIDER`).
 
 2. **EXACT — approver identity, event-sourced (NO schema change — the append-only log is the audit record):**
@@ -75,11 +76,12 @@ export function getSecretProtector(): SecretProtector {
 
 ## Acceptance criteria
 
-- [ ] `getSecretProtector()` returns dev backend by default (warn visible in logs), keyring backend under `LEDGER_PROVIDER=ledger`; live pay path settles through the dev protector (existing x402 tests green, behavior identical); no plaintext key handling added anywhere (grep: no new `HEDERA_OPERATOR_KEY` reads outside protector + config).
-- [ ] Resolve persists nothing new in DB (event-sourced); approval-completed event carries `resolved_by` (explicit + default); TraceView joins events on `approval_id` and renders `RESOLVED BY` (`"unknown"` for pre-change rows).
-- [ ] Capability promo line renders with exact subject/action/resource/expiry; existing grid untouched.
-- [ ] Preflight aborts on bypass flags (tested); settlement ref is a clickable HashScan link (href asserted).
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green. No other schema changes. No engine changes. No new reason codes.
+- [x] `getSecretProtector()` returns dev backend by default (warn visible in logs), keyring backend under `LEDGER_PROVIDER=ledger`; live pay path settles through the dev protector (existing x402 tests green, behavior identical); no plaintext key handling added anywhere (grep: no new `HEDERA_OPERATOR_KEY` reads outside protector + config).
+- [x] Resolve persists nothing new in DB (event-sourced); approval-completed event carries `resolved_by` (explicit + default); TraceView joins events on `approval_id` and renders `RESOLVED BY` (`"unknown"` for pre-change rows).
+- [x] Capability promo line renders with exact subject/action/resource/expiry; existing grid untouched.
+- [x] Preflight aborts on bypass flags (tested); settlement ref is a clickable HashScan link (href asserted).
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green. No other schema changes. No engine changes. No new reason codes.
+  (Test-run note: the full suite's one red is PRE-EXISTING and outside this wave's fence — plan-10's `e2e.demo.test.ts` needle expects purchase `capability.issued` AFTER `payment.completed`, but the orchestrator (untouched, orchestrator.ts:104→:467) emits it before; the test always skipped until the operator was funded, which exposed it. 135 pass / 3 skip / 1 pre-existing fail. Merger/plan-10 owner: fix the needle order.)
 
 ## Out of scope
 

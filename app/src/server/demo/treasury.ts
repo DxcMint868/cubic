@@ -164,7 +164,7 @@ async function run(setTaskId: (id: string) => void, markClosed: () => void): Pro
   check("swap", swap.decision === "escalate", `expected escalate, got ${swap.decision} (${swap.matched_rule_id})`);
   check("swap", swap.reasons.some((r) => r.code === "risk_requires_approval"), `expected risk_requires_approval, got ${JSON.stringify(swap.reasons)}`);
   say(`        decision=escalate rule=${swap.matched_policy}/${swap.matched_rule_id} approval=${swap.approval_id}`);
-  const swapResolved = await post(`/api/approvals/${swap.approval_id}/resolve`, { outcome: "approved" });
+  const swapResolved = await post(`/api/approvals/${swap.approval_id}/resolve`, { outcome: "approved", resolved_by: "demo-operator" });
   check("resolve-swap", swapResolved.json.ok === true, `resolve failed: ${JSON.stringify(swapResolved.json)}`);
   const sdata = swapResolved.json.data as unknown as ToolCallData;
   check("resolve-swap", !!sdata.capability && sdata.execution?.status === "succeeded", `expected capability + execution, got ${JSON.stringify(sdata)}`);
@@ -176,7 +176,7 @@ async function run(setTaskId: (id: string) => void, markClosed: () => void): Pro
   check("payroll", payroll.decision === "escalate", `expected escalate, got ${payroll.decision}`);
   check("payroll", payroll.reasons.some((r) => r.code === "risk_requires_approval"), `expected risk_requires_approval, got ${JSON.stringify(payroll.reasons)}`);
   say(`        decision=escalate rule=${payroll.matched_policy}/${payroll.matched_rule_id} approval=${payroll.approval_id}`);
-  const payrollResolved = await post(`/api/approvals/${payroll.approval_id}/resolve`, { outcome: "approved" });
+  const payrollResolved = await post(`/api/approvals/${payroll.approval_id}/resolve`, { outcome: "approved", resolved_by: "demo-operator" });
   check("resolve-payroll", payrollResolved.json.ok === true, `resolve failed: ${JSON.stringify(payrollResolved.json)}`);
   const pdata = payrollResolved.json.data as unknown as ToolCallData;
   check("resolve-payroll", pdata.execution?.status === "succeeded", `expected execution succeeded, got ${JSON.stringify(pdata.execution)}`);
@@ -192,7 +192,7 @@ async function run(setTaskId: (id: string) => void, markClosed: () => void): Pro
   const large = await toolCall("treasury.stake", { protocol: "lido", amount_usd_cents: 500_000 }, taskId);
   check("stake-large", large.decision === "escalate", `expected escalate, got ${large.decision}`);
   say(`        50 ETH (≈$5,000) → ESCALATE (${large.matched_rule_id}) — same action, risk did the talking`);
-  const largeResolved = await post(`/api/approvals/${large.approval_id}/resolve`, { outcome: "approved" });
+  const largeResolved = await post(`/api/approvals/${large.approval_id}/resolve`, { outcome: "approved", resolved_by: "demo-operator" });
   check("resolve-stake", largeResolved.json.ok === true, `resolve failed: ${JSON.stringify(largeResolved.json)}`);
 
   // 6. The $450k drain — the approver rejects. No capability, no execution,
@@ -200,7 +200,7 @@ async function run(setTaskId: (id: string) => void, markClosed: () => void): Pro
   say('\n[5/7] treasury.swap {asset_pair:"USDC/ETH", $450,000} — oversized, CIO rejects');
   const drain = await toolCall("treasury.swap", { asset_pair: "USDC/ETH", amount_usd_cents: 45_000_000 }, taskId);
   check("drain", drain.decision === "escalate", `expected escalate, got ${drain.decision}`);
-  const drainResolved = await post(`/api/approvals/${drain.approval_id}/resolve`, { outcome: "rejected" });
+  const drainResolved = await post(`/api/approvals/${drain.approval_id}/resolve`, { outcome: "rejected", resolved_by: "demo-operator" });
   check("reject-drain", drainResolved.json.ok === true, `resolve failed: ${JSON.stringify(drainResolved.json)}`);
   const ddata = drainResolved.json.data as { approval_outcome: string; capability: unknown; execution: unknown };
   check("reject-drain", ddata.approval_outcome === "rejected", `expected rejected, got ${JSON.stringify(ddata)}`);

@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react"; // classic JSX runtime for the vitest render test
 import Link from "next/link";
 import { useState } from "react";
 import MacWindow from "@/components/MacWindow";
@@ -88,7 +89,42 @@ function reasoningRefOf(normalized: unknown): { run_id: string; share_url: strin
   return { run_id, share_url: typeof share_url === "string" && share_url.length > 0 ? share_url : null };
 }
 
-function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number }) {
+// plan-12: approver identity is event-sourced — join the trace events array
+// on payload.approval_id and read payload.resolved_by. Rows that predate the
+// field (or pending rows with no completed event) render "unknown" — never
+// blank, never invented. Exported pure for tests.
+export function resolvedByOf(
+  events: Array<{ event_type: string; payload: Record<string, unknown> }>,
+  approvalId: string,
+): string {
+  const event = events.find(
+    (e) => e.event_type === "ledger.approval.completed" && e.payload?.approval_id === approvalId,
+  );
+  const resolvedBy = event?.payload?.resolved_by;
+  return typeof resolvedBy === "string" && resolvedBy.length > 0 ? resolvedBy : "unknown";
+}
+
+// plan-12: HashScan settlement link. The dash form matches the mirror-node
+// conversion in payments/x402.ts (duplicated here on purpose — that helper is
+// not exported and shared code must not move). Testnet-only URL assumption:
+// the demo runs HEDERA_NETWORK=testnet; a mainnet deployment would need the
+// host swapped. Exported pure for tests.
+export function hashscanUrl(settlementRef: string): string {
+  const [accountId, stamp] = settlementRef.split("@");
+  const txId = stamp ? `${accountId}-${stamp.replace(".", "-")}` : settlementRef;
+  return `https://hashscan.io/testnet/transaction/${txId}`;
+}
+
+// Exported for render-level tests (test seam — display logic only).
+export function ChainEntry({
+  entry,
+  index,
+  events,
+}: {
+  entry: TraceChainEntry;
+  index: number;
+  events: Trace["events"];
+}) {
   const { intent, decision, capability, payments, executions, approvals } = entry;
   const denied = decision?.decision === "deny";
   const escalated = decision?.decision === "escalate";
@@ -226,6 +262,19 @@ function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number })
       <Stage label="CAPABILITY" muted={!capability}>
         {capability ? (
           <>
+            <div
+              className="mono"
+              style={{
+                border: "1px dashed #3a3a3a",
+                padding: "10px 12px",
+                fontSize: 10.5,
+                letterSpacing: "0.08em",
+                color: "#e8e8e8",
+                lineHeight: 1.7,
+              }}
+            >
+              {`AGENT ${capability.subject} RECEIVED SCOPED CAPABILITY — ${capability.action} · ${capability.resource} · EXPIRES ${fmtDateTime(capability.expires_at)}`}
+            </div>
             <KV k="SCOPE" v={`${capability.action} · ${capability.resource}`} />
             <KV k="SUBJECT" v={capability.subject} />
             <KV k="BUDGET" v={usd(capability.budget_usd_cents)} />
@@ -248,7 +297,23 @@ function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number })
               <KV k="AMOUNT" v={`${usd(payment.amount_usd_cents)} · ${payment.network}`} />
               <KV k="SERVICE" v={payment.service} />
               <KV k="STATUS" v={payment.status.toUpperCase()} />
-              <KV k="SETTLEMENT REF" v={payment.x402_ref ?? "—"} />
+              <KV
+                k="SETTLEMENT REF"
+                v={
+                  payment.x402_ref ? (
+                    <a
+                      href={hashscanUrl(payment.x402_ref)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="link"
+                    >
+                      {payment.x402_ref}
+                    </a>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
               <KV k="SETTLED" v={fmtDateTime(payment.settled_at)} />
             </div>
           ))
@@ -269,6 +334,7 @@ function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number })
               />
               <KV k="TYPE" v={approval.type.toUpperCase()} />
               <KV k="OUTCOME" v={approval.status.toUpperCase()} />
+              <KV k="RESOLVED BY" v={resolvedByOf(events, approval.id)} />
               <KV k="REQUESTED" v={fmtDateTime(approval.requested_at)} />
               <KV k="COMPLETED" v={fmtDateTime(approval.completed_at)} />
               {approval.provider_ref && <KV k="PROVIDER REF" v={approval.provider_ref} />}
@@ -445,7 +511,7 @@ export default function TraceView({ taskId }: { taskId: string }) {
               ) : (
                 <div style={{ display: "grid", gap: 20 }}>
                   {trace.chain.map((entry, index) => (
-                    <ChainEntry key={entry.intent.id} entry={entry} index={index} />
+                    <ChainEntry key={entry.intent.id} entry={entry} index={index} events={trace.events} />
                   ))}
                 </div>
               )

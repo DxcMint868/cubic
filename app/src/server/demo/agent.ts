@@ -41,6 +41,18 @@ function say(line: string): void {
   console.log(line);
 }
 
+// plan-12: a real take must never run with the bypass/simulation flags on —
+// either would fake the settlement on camera. Exported pure for tests; the
+// loop body is the plan's EXACT block verbatim.
+export function assertBypassFlagsClear(): void {
+  for (const flag of ["X402_DEV_BYPASS", "X402_SIMULATE_FAILURE"] as const) {
+    const v = process.env[flag];
+    if (v !== undefined && v !== "0") {
+      throw new Error(`preflight: ${flag} must be unset or "0" for a real take (got ${JSON.stringify(v)})`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // HTTP helpers (happy path)
 // ---------------------------------------------------------------------------
@@ -135,6 +147,8 @@ async function happyPath(): Promise<void> {
     check("preflight", !!process.env[name], `${name} is not set — the paid steps (Beat 4) cannot settle. Set it in app/.env.local (server) and in this shell, then re-run.`);
   }
   say("[preflight] HEDERA_OPERATOR_* present — paid steps can settle on testnet.");
+  assertBypassFlagsClear();
+  say('[preflight] bypass flags clear (X402_DEV_BYPASS / X402_SIMULATE_FAILURE unset or "0").');
 
   // 1. Fresh demo state.
   say('\n[1/11] POST /api/demo/seed — "Fresh demo state."');
@@ -198,7 +212,7 @@ async function happyPath(): Promise<void> {
 
   // 7. Resolve the approval (dev stand-in for the Ledger device approval).
   say(`\n[7/11] Beat 5 — POST /api/approvals/${merge.approval_id}/resolve {approved} (dev stand-in for Ledger approval)`);
-  const resolved = await post(`/api/approvals/${merge.approval_id}/resolve`, { outcome: "approved" });
+  const resolved = await post(`/api/approvals/${merge.approval_id}/resolve`, { outcome: "approved", resolved_by: "demo-operator" });
   check("resolve-merge", resolved.json.ok === true, `resolve failed: ${JSON.stringify(resolved.json)}`);
   const rdata = resolved.json.data as unknown as ToolCallData;
   check("resolve-merge", !!rdata.capability && !!rdata.execution, `expected capability + execution, got ${JSON.stringify(rdata)}`);
@@ -209,7 +223,7 @@ async function happyPath(): Promise<void> {
   const deploy = await toolCall("deploy.production", { repo: "acme/backend" }, taskId);
   check("deploy", deploy.decision === "escalate", `expected escalate, got ${deploy.decision} (${deploy.matched_rule_id})`);
   check("deploy", deploy.approval_id !== null, "escalate must carry an approval_id");
-  const deployResolved = await post(`/api/approvals/${deploy.approval_id}/resolve`, { outcome: "approved" });
+  const deployResolved = await post(`/api/approvals/${deploy.approval_id}/resolve`, { outcome: "approved", resolved_by: "demo-operator" });
   check("resolve-deploy", deployResolved.json.ok === true, `resolve failed: ${JSON.stringify(deployResolved.json)}`);
   const ddata = deployResolved.json.data as unknown as ToolCallData;
   check("resolve-deploy", ddata.execution?.status === "succeeded", `expected execution succeeded, got ${JSON.stringify(ddata.execution)}`);
