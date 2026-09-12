@@ -73,10 +73,29 @@ function reasonText(entry: TraceChainEntry): string {
     .join(" · ");
 }
 
+// plan-11: narrow reader for the LangSmith reasoning ref inside
+// intent.normalized. Anything malformed → null (no link, never a dead one).
+// The writer (reasoning/langsmith.ts) enforces uuid + https; the reader
+// additionally refuses non-http(s) URLs so even a foreign row can never
+// render a javascript:/data: hyperlink.
+function reasoningRefOf(normalized: unknown): { run_id: string; share_url: string | null } | null {
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) return null;
+  const ref = (normalized as { reasoning_ref?: unknown }).reasoning_ref;
+  if (!ref || typeof ref !== "object" || Array.isArray(ref)) return null;
+  const { run_id, share_url } = ref as Record<string, unknown>;
+  if (typeof run_id !== "string" || run_id.length === 0) return null;
+  if (typeof share_url === "string" && share_url.length > 0 && !share_url.startsWith("http")) return null;
+  return { run_id, share_url: typeof share_url === "string" && share_url.length > 0 ? share_url : null };
+}
+
 function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number }) {
   const { intent, decision, capability, payments, executions, approvals } = entry;
   const denied = decision?.decision === "deny";
   const escalated = decision?.decision === "escalate";
+  // plan-11: linked AI reasoning trace — real LangSmith run or nothing.
+  // The ref travels in intents.normalized (trace API passes it through
+  // verbatim); render the link only when present, never a placeholder.
+  const aiTrace = reasoningRefOf(intent.normalized);
 
   return (
     <div
@@ -160,6 +179,21 @@ function ChainEntry({ entry, index }: { entry: TraceChainEntry; index: number })
           <KV
             k="ARGUMENTS (REDACTED)"
             v={JSON.stringify(intent.arguments_redacted)}
+          />
+        )}
+        {aiTrace && (
+          <KV
+            k="AI TRACE"
+            v={
+              <a
+                href={aiTrace.share_url ?? `https://smith.langchain.com/runs/${aiTrace.run_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="link"
+              >
+                View AI Trace (LangSmith) →
+              </a>
+            }
           />
         )}
       </Stage>

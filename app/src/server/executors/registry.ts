@@ -1,6 +1,7 @@
 import { GithubExecutor } from "./github";
 import { ScannerExecutor } from "./securityScan";
 import { TaskCompleteExecutor } from "./taskComplete";
+import { TreasuryExecutor } from "./treasury";
 
 // plan-04 EXACT — union return; the second arm is the seam plan-05's 402
 // discovery uses.
@@ -45,6 +46,8 @@ export function getExecutor(toolRow: ExecutorToolRow | null): ExecutorLookup {
   if (override) return { ok: true, executor: override };
   if (toolRow.executor === "github") return { ok: true, executor: new GithubExecutor() };
   if (toolRow.executor === "task") return { ok: true, executor: new TaskCompleteExecutor() };
+  // plan-11: treasury demo branch (dev-mode, explicitly labeled — no funds move).
+  if (toolRow.executor === "treasury") return { ok: true, executor: new TreasuryExecutor() };
   if (toolRow.executor === "scanner") {
     const endpoint =
       typeof toolRow.executorConfig?.endpoint === "string" ? toolRow.executorConfig.endpoint : null;
