@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17
+    container_name: cubic-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: cubic
+      POSTGRES_DB: cubic
+    ports:
+      - "5433:5432"
+    volumes:
+      - cubic-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cubic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  cubic-pgdata:
