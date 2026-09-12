@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "swarm": "tsx src/server/demo/swarm.ts",
+    "demo": "tsx src/server/demo/agent.ts",
+    "demo:adversarial": "tsx src/server/demo/agent.ts --adversarial",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
