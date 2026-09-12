@@ -44,10 +44,10 @@ plans 05–12 merged. Read `.agents/plans/plan-00-architecture.md` (§B.1, §F e
 
 ## Acceptance criteria
 
-- [ ] Fake-secret error through `runToolCall` reaches no agent surface, no event, no trace row (only fixed enum + redacted logs); shared regex covers camelCase; depth cutoff resolved.
-- [ ] Every revoke emits `capability.revoked`; projection row appears; trace EVENTS tab shows it.
-- [ ] `LEDGER_PROVIDER=ledger` without ring → boot fails fast with actionable message; bare-ref pay fails as `OPERATOR_KEY_NOT_PROTECTED` with server-side cause.
-- [ ] `origin` labels persist + render distinctly; server path sets `server-minted`.
+- [x] Fake-secret error through `runToolCall` reaches no agent surface, no event, no trace row (only fixed enum + redacted logs); shared regex covers camelCase; depth cutoff resolved. (hardening13.test.ts evil-twin canaries, green)
+- [x] Every revoke emits `capability.revoked`; projection row appears; trace EVENTS tab shows it. (hardening13 + capability tests, green)
+- [x] `LEDGER_PROVIDER=ledger` without ring → boot fails fast with actionable message; bare-ref pay fails as `OPERATOR_KEY_NOT_PROTECTED` with server-side cause. (unit tests green + LIVE `next dev` probe: server logs the EXACT message and exits; normal dev boot 200)
+- [x] `origin` labels persist + render distinctly; server path sets `server-minted`. (SSR render tests + mocked-SDK write-side test, green)
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` green. No schema changes. No engine changes. No new reason codes. No behavior change on happy paths (full suite green proves it).
 
 ## Out of scope
