@@ -40,6 +40,10 @@ allowed to do."
 - [ ] Bypass flags clear: the preflight now aborts unless `X402_DEV_BYPASS`
       and `X402_SIMULATE_FAILURE` are unset or `"0"` — a real take never runs
       with them on (don't be surprised by the abort; unset them and re-run)
+- [ ] LangSmith take decision (Beat 2 trace link): keyed take needs BOTH
+      `LANGSMITH_API_KEY` set AND `LANGSMITH_TRACING=true` (the SDK defaults
+      tracing OFF — key alone yields no link); unkeyed take narrates the
+      honest absence instead. Decide before shooting, not during.
 - [ ] Swarm optional: `pnpm --filter app swarm` in a second terminal for the
       Beat 7 zoom-out backdrop
 

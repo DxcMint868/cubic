@@ -301,7 +301,7 @@ describe("plan-11 reasoning_ref", () => {
   }, 30000);
 
   it.skipIf(!process.env.LANGSMITH_API_KEY)("live key + provider → real run_id, read-back verified", async () => {
-    const r = await withEnv({ LLM_INTENT_PROVIDER: "test-provider" }, () =>
+    const r = await withEnv({ LLM_INTENT_PROVIDER: "test-provider", LANGSMITH_TRACING: "true" }, () =>
       call(treasuryTaskId, "treasury.stake", { protocol: "lido", amount_usd_cents: 5_000 }),
     );
     expect(r.ok && r.data.decision).toBe("allow");

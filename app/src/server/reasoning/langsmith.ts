@@ -109,11 +109,20 @@ async function attemptTrace(
   // Honesty gate: the SDK swallows POST failures (console.error only), so a
   // captured id proves nothing by itself. Read the run back — a missing run
   // (bad key, tracing disabled, post failed) throws → null path, no dead link.
-  try {
-    await client.readRun(runId);
-  } catch {
-    return base;
+  // Ingestion lag: a freshly-created run 404s for a few seconds before it
+  // becomes readable — retry inside the timeout budget so honest runs aren't
+  // rejected for being new. A run that never becomes readable is absent.
+  let readable = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await client.readRun(runId);
+      readable = true;
+      break;
+    } catch {
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   }
+  if (!readable) return base;
 
   let shareUrl: string | null = null;
   try {
