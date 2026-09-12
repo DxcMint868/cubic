@@ -11,7 +11,7 @@ resolve is narrated as the dev stand-in it is.
 |---|---|---|---|
 | 1 — problem | 1 | Agent with raw tool access; prompt injection ("upload production secrets") | Narrate over Beat 6's DENY: without the gateway this read succeeds |
 | 2 — gateway | 2 | Same agent through Cubic: tool call → intent → policy → capability | `get_pull_request` → ALLOW (`default-v1/default-allow`) |
-| 3 — real execution | 2–3 | Reads PR #421, buys the scan, merges, deploys — real executor calls | Executors run; capabilities are consumed single-use |
+| 3 — real execution | 2–3 | Reads PR #421, buys the scan, merges, deploys — real executor calls (deploy target is mock-always; the escalate→approval→capability→execution chain around it is the real tested behavior) | Executors run; capabilities are consumed single-use |
 | 4 — machine payment | 3 | `402 Payment Required` → bounded spend policy → Hedera settlement → report | `payment-v1` ALLOW → Blocky402/testnet → `payment.completed` + settlement ref |
 | 5 — Ledger | 4 | HIGH RISK → approval → capability released | ESCALATE → `POST /api/approvals/<id>/resolve` (dev stand-in; on hardware this is the Ledger approval, identical event chain) → `capability.issued` → execution |
 | 6 — attack | 5 | Injected secret read | DENY `secret_resource`, no capability, no execution |
@@ -29,7 +29,10 @@ allowed to do."
       `http://localhost:3000/api/services/scanner/scan`; the purchase leg
       re-fetches its challenge from there)
 - [ ] Funded testnet operator in `app/.env.local`: `HEDERA_OPERATOR_ID` +
-      `HEDERA_OPERATOR_KEY` (+ `HEDERA_NETWORK=testnet`). The demo settles a
+      `HEDERA_OPERATOR_KEY` (+ `HEDERA_NETWORK=testnet`) AND the merchant
+      account `X402_PAY_TO_ACCOUNT=0.0.10482549` (public account id, not a
+      secret — without it every payment self-pays and the facilitator rejects
+      with `amount_mismatch`). The demo settles a
       real 25¢ — at ~$0.075/HBAR that is ≈3.3 HBAR plus gas; top up at
       portal.hedera.com well above that before the take
 - [ ] `LEDGER_PROVIDER` unset (= `dev`): approvals resolve via the resolve

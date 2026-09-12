@@ -133,7 +133,7 @@ beforeAll(async () => {
   }
   try {
     const res = await fetch(
-      `https://testnet.mirrornode.hedera.com/api/v1/accounts/${encodeURIComponent(c.HEDERA_OPERATOR_ID)}?balance=true`,
+      `https://testnet.mirrornode.hedera.com/api/v1/accounts/${encodeURIComponent(c.HEDERA_OPERATOR_ID)}`,
       { signal: AbortSignal.timeout(5000) },
     );
     if (!res.ok) {
