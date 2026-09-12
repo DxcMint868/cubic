@@ -410,7 +410,10 @@ describe("plan-04 orchestrator execution phase", () => {
     const capId = result.data.capability!.capability_id;
     const [execRow] = await db().select().from(executions).where(eq(executions.capabilityId, capId));
     expect(execRow).toMatchObject({
-      status: "failed", tool: "fail.tool", executor: "failing", error: "boom",
+      status: "failed", tool: "fail.tool", executor: "failing",
+      // plan-13: the raw executor message stays server-side (redacting log);
+      // the executions row persists the fixed enum only.
+      error: "EXECUTOR_ERROR",
     });
     const cap = await capabilityById(capId);
     expect(cap!.status).toBe("consumed"); // not reusable

@@ -15,9 +15,27 @@ import { getContextProvider } from "./context/provider";
 import { getApprovalProvider } from "./approval/provider";
 import { ledgerApprovalProvider } from "../ledger/keyring";
 import { evaluate, selectPolicy, type Rule } from "./policy/engine";
-import { logger } from "../logging";
+import { logger, redactText } from "../logging";
 
 const log = logger("gateway");
+
+// plan-13 EXACT — the closed error_code set for payment/execution failures.
+// Unknown throws are mapped HERE, at the emit boundary, BEFORE failPayment /
+// event payload / agent response — raw error text never leaves the process.
+const PAYMENT_ERROR_CODES = new Set([
+  "SETTLEMENT_ERROR", "EXECUTOR_ERROR", "CHALLENGE_UNAVAILABLE", "PRICE_MISMATCH",
+  "SERVICE_PAYMENT_REQUIRED",
+  // existing codes minted by the flow itself (provider + pre-checks):
+  "SIMULATED_SETTLEMENT_FAILURE", "OPERATOR_NOT_CONFIGURED", "OPERATOR_KEY_NOT_PROTECTED",
+  "INVALID_CHALLENGE", "VERIFY_REJECTED", "SETTLEMENT_FAILED",
+]);
+
+// plan-13 EXACT: anything outside the closed set — including facilitator
+// free-text suffixes — becomes SETTLEMENT_ERROR at the emit boundary.
+function normalizePaymentErrorCode(raw: string): string {
+  if (PAYMENT_ERROR_CODES.has(raw)) return raw;
+  return "SETTLEMENT_ERROR";
+}
 
 // plan-00 §G tool-call shape; payment stage fills in as of plan-05 (purchase
 // wiring), stays null for non-purchase calls.
@@ -189,9 +207,12 @@ export async function runExecutionPhase(input: ExecutionPhaseInput): Promise<Exe
   );
 
   if ("threw" in outcome) {
+    // plan-13: the raw executor error goes ONLY through the redacting logger;
+    // the executions row, event payload, and agent response carry the fixed
+    // enum — never the possibly key-bearing message.
     await db()
       .update(executions)
-      .set({ status: "failed", error: outcome.threw, completedAt: new Date().toISOString() })
+      .set({ status: "failed", error: "EXECUTOR_ERROR", completedAt: new Date().toISOString() })
       .where(eq(executions.id, executionRow.id));
     // Server-log the failure too: the DB row + audit event exist, but without
     // this line a broken executor (e.g. an unhandled action) is invisible
@@ -508,7 +529,7 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
           );
         } catch { /* best-effort */ }
         try {
-          await revokeCapability(capabilityId);
+          await revokeCapability(capabilityId, "payment_failed");
         } catch { /* best-effort */ }
         data.payment = {
           payment_id: paymentRow.id,
@@ -551,7 +572,9 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
 
         if (payResult.status !== "completed") {
           // EXACT failed branch: row failed + payment.failed + revoke + no execution.
-          await failPayment(payResult.error_code, null);
+          // plan-13: the code is normalized to the closed set here too — a
+          // provider minting an unknown code can never open the set back up.
+          await failPayment(normalizePaymentErrorCode(payResult.error_code), null);
           return { ok: true, data };
         }
 
@@ -590,7 +613,13 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
       if (purchased.status === "rejected") {
         // Money settled but the capability could not be consumed — do not
         // leave the authority live; revoke before surfacing the rejection.
-        await revokeCapability(capabilityId);
+        // Best-effort like failPayment's revoke: an emission/DB failure must
+        // not mask the settled payment behind a generic INTERNAL error.
+        try {
+          await revokeCapability(capabilityId, "capability_rejected");
+        } catch (err) {
+          log.error("post-settle revoke failed", { capability_id: capabilityId, error: err instanceof Error ? err.message : String(err) });
+        }
         return {
           ok: false,
           error: { code: "CAPABILITY_REJECTED", message: `capability rejected: ${purchased.reason}` },
@@ -638,14 +667,22 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
       // A payment_required arm mid-purchase means the service refused the
       // settlement proof (verifySettlement false / replayed ref) — failed run.
       if ("threw" in purchaseOutcome) {
+        // plan-13: fixed enum into the executions row; raw message stays
+        // server-side in the redacting logger.
         await db()
           .update(executions)
           .set({
             status: "failed",
-            error: purchaseOutcome.threw,
+            error: "EXECUTOR_ERROR",
             completedAt: new Date().toISOString(),
           })
           .where(eq(executions.id, purchaseExecRow.id));
+        log.error("purchase executor threw", {
+          tool: ingested.intent.tool,
+          action: normalized.action,
+          resource: normalized.resource,
+          error: purchaseOutcome.threw,
+        });
         await emit(
           {
             event_type: "tool.execution.failed",
@@ -664,15 +701,18 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
         return { ok: true, data };
       }
       if ("status" in purchaseOutcome) {
-        // service refused the settlement proof → failed execution
+        // service refused the settlement proof → failed execution.
+        // plan-13: the executions row carries the fixed enum (the reason text
+        // stays server-side in the log), matching the other failed arms.
         await db()
           .update(executions)
           .set({
             status: "failed",
-            error: "service returned 402 for the settled purchase",
+            error: "SERVICE_PAYMENT_REQUIRED",
             completedAt: new Date().toISOString(),
           })
           .where(eq(executions.id, purchaseExecRow.id));
+        log.warn("service refused the settlement proof", { tool: ingested.intent.tool, capability_id: capabilityId });
         await emit(
           {
             event_type: "tool.execution.failed",
@@ -723,8 +763,17 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
         // Unexpected throw mid-purchase (provider/config/DB) — reconcile
         // best-effort so money and capability are never stranded silently.
         // If settlement already landed on-chain, record the real ref.
+        // plan-13 EXACT: the raw error is mapped to the closed enum BEFORE
+        // failPayment/event/agent response; the raw text goes only through
+        // the redacting logger below.
         const settledRef = data.payment?.status === "completed" ? data.payment.settlement_ref : null;
-        await failPayment(err instanceof Error ? err.message : "SETTLEMENT_ERROR", settledRef);
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        log.error("purchase threw before completion", {
+          tool: ingested.intent.tool,
+          action: normalized.action,
+          error: rawMessage,
+        });
+        await failPayment(normalizePaymentErrorCode(rawMessage), settledRef);
         return { ok: true, data };
       }
     }
@@ -733,7 +782,10 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
     if (err instanceof GatewayError) {
       return { ok: false, error: { code: err.code, message: err.message } };
     }
-    const message = err instanceof Error ? err.message : String(err);
+    // plan-13: the raw message is scrubbed through the shared redactor before
+    // it reaches the agent surface (key=value pairs gone, prose preserved —
+    // the wallet-cli/Key Ring failure texts stay actionable).
+    const message = redactText(err instanceof Error ? err.message : String(err));
     return { ok: false, error: { code: "INTERNAL", message } };
   }
 }
