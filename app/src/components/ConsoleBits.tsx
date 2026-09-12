@@ -141,3 +141,117 @@ export function DecisionTag({ d }: { d: string }) {
     </span>
   );
 }
+
+export function Skeleton({
+  height = 14,
+  width = "100%",
+  style,
+}: {
+  height?: number;
+  width?: number | string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      aria-hidden
+      style={{
+        height,
+        width,
+        background: "#161616",
+        animation: "blink 1.6s steps(2, start) infinite",
+        ...style,
+      }}
+    />
+  );
+}
+
+export function ErrorWindow({
+  code,
+  message,
+  title = "ERROR",
+}: {
+  code: string;
+  message: string;
+  title?: string;
+}) {
+  return (
+    <MacWindow title={title}>
+      <div style={{ padding: "26px 24px 28px" }}>
+        <div
+          className="mono"
+          style={{ fontSize: 11, letterSpacing: "0.16em", color: "#e8e8e8" }}
+        >
+          {code}
+        </div>
+        <p style={{ marginTop: 10, fontSize: 14, lineHeight: 1.6, color: "#8a8a8a" }}>
+          {message}
+        </p>
+      </div>
+    </MacWindow>
+  );
+}
+
+export function EmptyState({ children }: { children?: React.ReactNode }) {
+  return (
+    <div
+      className="mono"
+      style={{
+        border: "1px solid #232323",
+        borderRadius: 10,
+        padding: "34px 24px",
+        textAlign: "center",
+        fontSize: 11,
+        letterSpacing: "0.14em",
+        lineHeight: 1.8,
+        color: "#5a5a5a",
+      }}
+    >
+      {children ?? "No live events yet — run the demo agent or the swarm."}
+    </div>
+  );
+}
+
+export function ProviderBadge({ provider }: { provider: string }) {
+  const ledger = provider === "ledger";
+  const dev = provider === "dev";
+  const label = ledger ? "LEDGER" : dev ? "DEV" : provider.toUpperCase() || "—";
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-block",
+        fontSize: 9.5,
+        letterSpacing: "0.14em",
+        padding: "3px 8px",
+        border: `1px ${ledger || dev ? "solid" : "dashed"} ${
+          ledger ? "#e8e8e8" : dev ? "#3a3a3a" : "#3a3a3a"
+        }`,
+        background: ledger ? "#e8e8e8" : "transparent",
+        color: ledger ? "#000" : dev ? "#8a8a8a" : "#5a5a5a",
+        whiteSpace: "nowrap",
+      }}
+      title={ledger ? "Ledger provider" : dev ? "Development provider" : "Provider unknown"}
+    >
+      {label}
+    </span>
+  );
+}
+
+export function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-block",
+        fontSize: 9.5,
+        letterSpacing: "0.12em",
+        padding: "3px 8px",
+        border: "1px solid #3a3a3a",
+        color: "#c9c9c9",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </span>
+  );
+}

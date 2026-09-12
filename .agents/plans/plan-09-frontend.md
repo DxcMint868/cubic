@@ -38,10 +38,10 @@ plans 05–08 merged; read `DESIGN.md` + `app/src/components/MacWindow.tsx` FIRS
 
 ## Acceptance criteria
 
-- [ ] With `pnpm dev` running and a demo run in progress, `/network` shows live events arriving over SSE (verify by watching new pulses/counters while `demo/agent.ts` or the swarm runs).
-- [ ] `/console/tasks/[id]` shows the complete chain for a happy-path task AND for the prompt-injection task (DENY + `secret_resource` reason visible).
-- [ ] Visual checklist (manual, honest): monochrome only, `MacWindow` chrome reused, `.mono` for technical text, no new fonts, no color accents — record the check in your final report. `pnpm typecheck && pnpm lint` green; no server files modified.
-- [ ] `pnpm typecheck && pnpm lint` green.
+- [x] With `pnpm dev` running and a demo run in progress, `/network` shows live events arriving over SSE (verify by watching new pulses/counters while `demo/agent.ts` or the swarm runs).
+- [x] `/console/tasks/[id]` shows the complete chain for a happy-path task AND for the prompt-injection task (DENY + `secret_resource` reason visible).
+- [x] Visual checklist (manual, honest): monochrome only, `MacWindow` chrome reused, `.mono` for technical text, no new fonts, no color accents — record the check in your final report. `pnpm typecheck && pnpm lint` green; no server files modified.
+- [x] `pnpm typecheck && pnpm lint` green.
 
 ## Out of scope
 

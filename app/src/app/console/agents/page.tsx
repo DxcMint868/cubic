@@ -1,62 +1,107 @@
-import { MOCK_AGENTS } from "@/data/console";
-import { PageHead, Panel, td, th } from "@/components/ConsoleBits";
+"use client";
 
-const CAPS: Record<string, string> = {
-  "deploy-agent": "github.merge · deploy.prod",
-  "review-bot": "github.read · ci.inspect",
-  "pay-runner": "x402.pay · treasury.read",
-  "scan-seeker": "x402.pay · scanner.use",
-  "ci-herald": "slack.post · ci.read",
-  "a2a-relay": "a2a.route · graph.query",
-};
+import Link from "next/link";
+import { useMemo } from "react";
+import {
+  EmptyState,
+  ErrorWindow,
+  PageHead,
+  Panel,
+  Skeleton,
+  td,
+  th,
+} from "@/components/ConsoleBits";
+import { deriveAgents, fmtAge, shortId } from "@/components/console/derive";
+import { getAuditEvents, useApi } from "@/lib/api";
 
 export default function ConsoleAgents() {
-  const agents = MOCK_AGENTS.slice(0, 6);
+  const { data, error, loading, reload } = useApi("console-agents", () =>
+    getAuditEvents({ limit: 200 }),
+  );
+  const agents = useMemo(() => deriveAgents(data ?? []), [data]);
+
+  if (loading && !data) {
+    return (
+      <div>
+        <PageHead eyebrow="CONSOLE — AGENTS" title="Agents you authorize." />
+        <div style={{ marginTop: 28, display: "grid", gap: 12 }}>
+          {[0, 1, 2, 3].map((row) => (
+            <Skeleton key={row} height={54} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div>
+        <PageHead eyebrow="CONSOLE — AGENTS" title="Agents you authorize." />
+        <div style={{ marginTop: 28 }}>
+          <ErrorWindow code={error.code} message={error.message} title="AGENTS — ERROR" />
+          <button
+            onClick={reload}
+            className="mono btn-outline"
+            style={{ marginTop: 18, background: "transparent", cursor: "pointer" }}
+          >
+            RETRY
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <PageHead
         eyebrow="CONSOLE — AGENTS"
         title="Agents you authorize."
-        sub="Tenant-scoped registry. Global discovery lives on the network page — here you decide what each agent may do."
+        sub="Every agent observed in the tenant audit log, with its intent and decision counts. Open an agent to see its identity (resolved from capability subjects) and its task activity."
       />
       <div style={{ marginTop: 28 }}>
-        <Panel title={`${agents.length} AGENTS`}>
-          <div style={{ overflowX: "auto" }}>
-            <table className="mono" style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th style={th}>AGENT</th>
-                  <th style={th}>REGISTRY</th>
-                  <th style={th}>REPUTATION</th>
-                  <th style={th}>DECLARED CAPS</th>
-                  <th style={th}>AUTHS</th>
-                  <th style={th}>STATUS</th>
-                  <th style={th}>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents.map((a) => (
-                  <tr key={a.registryId}>
-                    <td style={td}>
-                      <span style={{ color: "#f4f4f4" }}>{a.name}</span>
-                    </td>
-                    <td style={td}>#{a.registryId}</td>
-                    <td style={td}>{a.reputation.toFixed(2)}</td>
-                    <td style={{ ...td, fontSize: 12 }}>
-                      {CAPS[a.name] ?? "github.read"}
-                    </td>
-                    <td style={td}>{a.authorizations.toLocaleString()}</td>
-                    <td style={td}>{a.status.toUpperCase()}</td>
-                    <td style={td}>
-                      <span style={{ fontSize: 11, color: "#5a5a5a" }}>
-                        PAUSE · ROTATE
-                      </span>
-                    </td>
+        <Panel title={`${agents.length} AGENTS — FROM AUDIT EVENTS`}>
+          {agents.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="mono" style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th style={th}>AGENT ID</th>
+                    <th style={th}>TASKS</th>
+                    <th style={th}>INTENTS</th>
+                    <th style={th}>ALLOW / ESC / DENY</th>
+                    <th style={th}>APPROVALS</th>
+                    <th style={th}>LAST EVENT</th>
+                    <th style={th} />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {agents.map((agent) => (
+                    <tr key={agent.agentId}>
+                      <td style={{ ...td, fontSize: 11 }}>{shortId(agent.agentId, 12)}</td>
+                      <td style={td}>{agent.taskIds.length}</td>
+                      <td style={td}>{agent.intents}</td>
+                      <td style={td}>
+                        {agent.allowed} / {agent.escalated} / {agent.denied}
+                      </td>
+                      <td style={td}>{agent.approvals}</td>
+                      <td style={{ ...td, fontSize: 11 }}>{fmtAge(agent.lastEventAt)} ago</td>
+                      <td style={{ ...td, textAlign: "right" }}>
+                        <Link
+                          href={`/console/agents/${agent.agentId}`}
+                          className="link"
+                          style={{ fontSize: 10.5, letterSpacing: "0.12em" }}
+                        >
+                          OPEN →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Panel>
       </div>
     </div>

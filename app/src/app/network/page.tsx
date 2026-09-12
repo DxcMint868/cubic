@@ -1,76 +1,135 @@
 "use client";
 
-import { useState } from "react";
-import AgentGraph from "@/components/AgentGraph";
+import { useEffect, useMemo, useRef, useState } from "react";
 import MacWindow from "@/components/MacWindow";
+import NetworkGraph from "@/components/network/NetworkGraph";
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
-import { MOCK_AGENTS } from "@/data/agents";
-import type { Agent, AgentStatus } from "@/data/agents";
+import {
+  getNetworkEvents,
+  getNetworkStats,
+  mergeNetworkEvents,
+  useApi,
+  useNetworkStream,
+  type NetworkEvent,
+} from "@/lib/api";
+import { fmtAge, fmtTime } from "@/components/console/derive";
 
-const tier = (r: number) =>
-  r >= 0.9 ? "TRUSTED" : r >= 0.8 ? "ESTABLISHED" : r >= 0.7 ? "WATCH" : "PROBATION";
-
-const MAX_AUTHS = Math.max(...MOCK_AGENTS.map((a) => a.authorizations));
-
-const STATS = [
-  { value: "12", label: "AGENTS ONLINE" },
-  { value: "24,921", label: "INTENTS EVALUATED" },
-  { value: "23,884", label: "AUTHORIZED" },
-  { value: "123", label: "ESCALATED" },
+const STATE_LEGEND = [
+  { label: "CORE FILLED — ALLOWED", border: "1px solid #c9c9c9", core: true, dash: false },
+  { label: "CORE HOLLOW — ESCALATED", border: "1px solid #8a8a8a", core: false, dash: false },
+  { label: "DASHED — DENIED / REJECTED", border: "1px dashed #8a8a8a", core: false, dash: true },
 ];
 
-function RepBar({ value }: { value: number }) {
+const ACTION_LEGEND = [
+  { label: "INTENT · DOTTED", stroke: "dotted" },
+  { label: "EVALUATION · SOLID", stroke: "solid" },
+  { label: "AUTHORIZATION · SOLID 2PX", stroke: "solid" },
+  { label: "EXECUTION · BOLD", stroke: "solid" },
+  { label: "APPROVAL · LONG DASH", stroke: "dashed" },
+  { label: "TASK · HAIRLINE", stroke: "dotted" },
+  { label: "PAYMENT · ◆ MARKER", stroke: "solid" },
+];
+
+function Stat({ value, label }: { value: string; label: string }) {
   return (
-    <div
-      style={{
-        height: 6,
-        border: "1px solid #3a3a3a",
-        position: "relative",
-        marginTop: 8,
-      }}
-    >
+    <div>
+      <div className="mono" style={{ fontSize: 19, color: "#e8e8e8", letterSpacing: "0.02em" }}>
+        {value}
+      </div>
       <div
-        style={{
-          position: "absolute",
-          inset: 1,
-          width: `calc(${Math.round(value * 100)}% - 2px)`,
-          background: "#e8e8e8",
-        }}
-      />
+        className="mono"
+        style={{ marginTop: 6, fontSize: 9.5, letterSpacing: "0.16em", color: "#5a5a5a" }}
+      >
+        {label}
+      </div>
     </div>
   );
 }
 
-export default function NetworkPage() {
-  const [selectedId, setSelectedId] = useState(MOCK_AGENTS[0].registryId);
-  const [statusFilter, setStatusFilter] = useState<"ALL" | AgentStatus>("ALL");
-  const [sortBy, setSortBy] = useState<"REP" | "AUTHS">("REP");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
-  const selected = MOCK_AGENTS.find((a) => a.registryId === selectedId)!;
+function OutcomeTag({ outcome }: { outcome: string }) {
+  const filled = ["allow", "issued", "completed", "consumed", "succeeded", "created"].includes(outcome);
+  const dashed = ["deny", "denied", "rejected", "failed", "not_found", "replay", "expired"].includes(outcome);
+  return (
+    <span
+      className="mono"
+      style={{
+        display: "inline-block",
+        fontSize: 9,
+        letterSpacing: "0.12em",
+        padding: "3px 7px",
+        border: `1px ${dashed ? "dashed" : "solid"} #3a3a3a`,
+        background: filled ? "#e8e8e8" : "transparent",
+        color: filled ? "#000" : "#c9c9c9",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {outcome.toUpperCase()}
+    </span>
+  );
+}
 
-  const PAGE_SIZE = 8;
-  const q = query.trim().toLowerCase();
-  const filtered = MOCK_AGENTS.filter(
-    (a) => statusFilter === "ALL" || a.status === statusFilter
-  )
-    .filter(
-      (a) =>
-        !q ||
-        String(a.registryId).includes(q) ||
-        a.name.toLowerCase().includes(q) ||
-        a.agentKey.toLowerCase().includes(q) ||
-        (a.ens ?? "").toLowerCase().includes(q)
-    )
-    .sort((a, b) =>
-      sortBy === "REP"
-        ? b.reputation - a.reputation
-        : b.authorizations - a.authorizations
-    );
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const cur = Math.min(page, pages - 1);
-  const slice = filtered.slice(cur * PAGE_SIZE, (cur + 1) * PAGE_SIZE);
+export default function NetworkPage() {
+  const initial = useApi("network-events", () => getNetworkEvents({ limit: 150 }));
+  const stats = useApi("network-stats", getNetworkStats);
+  const { events: live, connected, error: streamError } = useNetworkStream();
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const events = useMemo(
+    () => mergeNetworkEvents(initial.data ?? [], live),
+    [initial.data, live],
+  );
+
+  const statsReload = stats.reload;
+  const lastRefresh = useRef(0);
+  useEffect(() => {
+    if (live.length === 0) return;
+    const now = Date.now();
+    if (now - lastRefresh.current < 1500) return;
+    lastRefresh.current = now;
+    statsReload();
+  }, [live.length, statsReload]);
+
+  const agents = useMemo(() => {
+    const map = new Map<
+      string,
+      { pseudonym: string; category: string; count: number; last: NetworkEvent }
+    >();
+    for (const event of events) {
+      const current = map.get(event.agent_pseudonym);
+      if (!current) {
+        map.set(event.agent_pseudonym, {
+          pseudonym: event.agent_pseudonym,
+          category: event.agent_category,
+          count: 1,
+          last: event,
+        });
+      } else {
+        current.count += 1;
+        current.last = event;
+        current.category = event.agent_category || current.category;
+      }
+    }
+    return [...map.values()].sort((a, b) => b.last.id - a.last.id);
+  }, [events]);
+
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const agent of agents) counts.set(agent.category, (counts.get(agent.category) ?? 0) + 1);
+    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [agents]);
+
+  const selectedAgent = selected ? agents.find((agent) => agent.pseudonym === selected) ?? null : null;
+  const selectedEvents = useMemo(
+    () =>
+      selected
+        ? events.filter((event) => event.agent_pseudonym === selected).slice(-10).reverse()
+        : [],
+    [events, selected],
+  );
+  const feed = useMemo(() => [...events].slice(-14).reverse(), [events]);
+
+  const counters = stats.data;
 
   return (
     <main
@@ -84,11 +143,8 @@ export default function NetworkPage() {
       <SiteHeader active="NETWORK" />
 
       <div className="section-pad" style={{ paddingBottom: 0 }}>
-        <p
-          className="mono"
-          style={{ fontSize: 11, letterSpacing: "0.2em", color: "#5a5a5a" }}
-        >
-          AGENT NETWORK
+        <p className="mono" style={{ fontSize: 11, letterSpacing: "0.2em", color: "#5a5a5a" }}>
+          GLOBAL AGENT NETWORK
         </p>
         <h1
           style={{
@@ -100,7 +156,7 @@ export default function NetworkPage() {
             color: "#f4f4f4",
           }}
         >
-          Available agents.
+          Live agent activity.
         </h1>
         <p
           style={{
@@ -108,11 +164,12 @@ export default function NetworkPage() {
             fontSize: 15.5,
             lineHeight: 1.65,
             color: "#8a8a8a",
-            maxWidth: 640,
+            maxWidth: 680,
           }}
         >
-          Every square is an agent open to work. Select one to inspect its
-          ERC-8004 registration, reputation, and authorization history.
+          Every cube is an agent pseudonym, grouped by its tool category. Pulses are real
+          projected events from the gateway pipeline — decisions, capabilities, payments,
+          executions — stripped of tenant identity before they reach this surface.
         </p>
         <p
           className="mono"
@@ -123,8 +180,8 @@ export default function NetworkPage() {
             color: "#3f3f3f",
           }}
         >
-          SIMULATED ACTIVITY — DEMO NETWORK · SOURCE: MOCK — ERC-8004 WIRING
-          PENDING
+          {connected ? "SSE LIVE — SUBSCRIBED" : streamError?.toUpperCase() ?? "SSE — CONNECTING"}
+          {" · REAL EVENT PIPELINE — SYNTHETIC SWARM AGENTS INCLUDED (DEMO)"}
         </p>
 
         <div
@@ -135,545 +192,351 @@ export default function NetworkPage() {
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
             gap: "22px 28px",
-            maxWidth: 640,
+            maxWidth: 760,
           }}
         >
-          {STATS.map((s) => (
-            <div key={s.label}>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 19,
-                  color: "#e8e8e8",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                {s.value}
-              </div>
-              <div
-                className="mono"
-                style={{
-                  marginTop: 6,
-                  fontSize: 9.5,
-                  letterSpacing: "0.16em",
-                  color: "#5a5a5a",
-                }}
-              >
-                {s.label}
-              </div>
-            </div>
-          ))}
+          <Stat value={counters ? String(counters.agents_observed) : "—"} label="AGENTS OBSERVED" />
+          <Stat value={counters ? String(counters.intents_evaluated) : "—"} label="INTENTS EVALUATED" />
+          <Stat value={counters ? String(counters.allowed) : "—"} label="AUTHORIZED" />
+          <Stat value={counters ? String(counters.denied) : "—"} label="DENIED" />
+          <Stat value={counters ? String(counters.escalated) : "—"} label="ESCALATED" />
+          <Stat
+            value={counters ? String(counters.payments_completed) : "—"}
+            label="PAYMENTS COMPLETED"
+          />
         </div>
       </div>
 
-      <div className="section-pad network-grid">
-        <MacWindow title={`LIVE TOPOLOGY — ${MOCK_AGENTS.length} AGENTS`}>
-          <div style={{ height: 480 }}>
-            <AgentGraph
-              agents={MOCK_AGENTS}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-            />
-          </div>
-        </MacWindow>
-
-        <MacWindow title={`AGENT #${selected.registryId}`}>
-          <div style={{ padding: "28px 26px 30px" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-              }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 30,
-                  height: 30,
-                  border: "1px solid #e8e8e8",
-                  position: "relative",
-                  flexShrink: 0,
-                }}
+      {initial.error && !initial.data && events.length === 0 ? (
+        <div className="section-pad" style={{ paddingTop: 28, paddingBottom: 0 }}>
+          <MacWindow title="NETWORK — ERROR">
+            <div style={{ padding: "26px 24px 28px" }}>
+              <div
+                className="mono"
+                style={{ fontSize: 11, letterSpacing: "0.16em", color: "#e8e8e8" }}
               >
-                <span
+                {initial.error.code}
+              </div>
+              <p style={{ marginTop: 10, fontSize: 14, color: "#8a8a8a" }}>{initial.error.message}</p>
+            </div>
+          </MacWindow>
+        </div>
+      ) : (
+        <div className="section-pad network-grid">
+          <MacWindow title={`LIVE TOPOLOGY — ${agents.length} AGENTS`}>
+            <div style={{ height: 520, position: "relative" }}>
+              {initial.loading && events.length === 0 ? (
+                <div
                   style={{
                     position: "absolute",
-                    inset: 11,
-                    background: "#e8e8e8",
-                  }}
-                />
-              </span>
-              <div>
-                <div
-                  style={{
-                    fontSize: 20,
-                    fontWeight: 700,
-                    letterSpacing: "-0.01em",
-                    color: "#e8e8e8",
+                    inset: 0,
+                    padding: "26px 24px",
+                    display: "grid",
+                    gap: 14,
+                    alignContent: "center",
                   }}
                 >
-                  {selected.name}
-                </div>
-                <div
-                  className="mono"
-                  style={{
-                    marginTop: 4,
-                    fontSize: 11,
-                    letterSpacing: "0.08em",
-                    color: "#5a5a5a",
-                  }}
-                >
-                  {selected.agentKey} · {selected.status.toUpperCase()}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className="mono"
-              style={{
-                marginTop: 22,
-                fontSize: 11,
-                letterSpacing: "0.14em",
-                color: "#6a6a6a",
-              }}
-            >
-              REPUTATION — {selected.reputation.toFixed(2)}
-            </div>
-            <RepBar value={selected.reputation} />
-
-            <div
-              style={{
-                marginTop: 22,
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 16,
-              }}
-            >
-              {[
-                { v: selected.authorizations.toLocaleString(), l: "AUTHORIZED" },
-                { v: String(selected.escalated), l: "ESCALATED" },
-                { v: String(selected.denied), l: "DENIED" },
-              ].map((s) => (
-                <div key={s.l}>
-                  <div
-                    className="mono"
-                    style={{ fontSize: 17, color: "#e8e8e8" }}
-                  >
-                    {s.v}
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#3f3f3f" }}>
+                    LOADING NETWORK EVENTS…
                   </div>
-                  <div
-                    className="mono"
-                    style={{
-                      marginTop: 5,
-                      fontSize: 9,
-                      letterSpacing: "0.16em",
-                      color: "#5a5a5a",
-                    }}
-                  >
-                    {s.l}
-                  </div>
+                  {[0, 1, 2].map((row) => (
+                    <div
+                      key={row}
+                      aria-hidden
+                      style={{
+                        height: 16,
+                        width: `${70 - row * 14}%`,
+                        background: "#141414",
+                        animation: "blink 1.6s steps(2, start) infinite",
+                      }}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
-
-            <dl
-              className="mono"
-              style={{
-                marginTop: 24,
-                borderTop: "1px solid rgba(255,255,255,0.1)",
-                paddingTop: 18,
-                display: "grid",
-                gap: 10,
-                fontSize: 11,
-                letterSpacing: "0.06em",
-              }}
-            >
-              {[
-                ["REGISTRY ID", `#${selected.registryId}`],
-                ["ENS", selected.ens ?? "—"],
-                ["OWNER", selected.owner],
-                ["CHAIN", selected.chain.toUpperCase()],
-                ["LAST SEEN", selected.lastSeen.toUpperCase()],
-              ].map(([k, v]) => (
+              ) : events.length === 0 ? (
                 <div
-                  key={k}
-                  style={{ display: "flex", justifyContent: "space-between", gap: 16 }}
-                >
-                  <dt style={{ color: "#5a5a5a" }}>{k}</dt>
-                  <dd style={{ color: "#c9c9c9", textAlign: "right" }}>{v}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </MacWindow>
-      </div>
-
-      <div className="section-pad" style={{ paddingTop: 0 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 16,
-          }}
-        >
-          <p
-            className="mono"
-            style={{ fontSize: 11, letterSpacing: "0.2em", color: "#5a5a5a" }}
-          >
-            DIRECTORY — {filtered.length}
-          </p>
-          <div className="mono" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {(["ALL", "online", "idle", "offline"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => {
-                  setStatusFilter(s);
-                  setPage(0);
-                }}
-                style={{
-                  cursor: "pointer",
-                  fontSize: 10,
-                  letterSpacing: "0.14em",
-                  padding: "6px 12px",
-                  border: "1px solid #3a3a3a",
-                  background: statusFilter === s ? "#e8e8e8" : "transparent",
-                  color: statusFilter === s ? "#000" : "#8a8a8a",
-                  fontFamily: "inherit",
-                }}
-              >
-                {s === "ALL" ? "ALL" : s.toUpperCase()}
-              </button>
-            ))}
-            <span style={{ width: 8 }} />
-            {(["REP", "AUTHS"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSortBy(s)}
-                style={{
-                  cursor: "pointer",
-                  fontSize: 10,
-                  letterSpacing: "0.14em",
-                  padding: "6px 12px",
-                  border: "1px solid transparent",
-                  borderBottomColor: sortBy === s ? "#e8e8e8" : "transparent",
-                  background: "transparent",
-                  color: sortBy === s ? "#fff" : "#5a5a5a",
-                  fontFamily: "inherit",
-                }}
-              >
-                {s === "REP" ? "↓ REP" : "↓ AUTHS"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div
-          className="mono"
-          style={{
-            marginTop: 18,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 16,
-          }}
-        >
-          <input
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setPage(0);
-            }}
-            placeholder="SEARCH ID · NAME · ENS — e.g. 8472"
-            aria-label="Search agents by id, name, or ENS"
-            style={{
-              background: "#000",
-              border: "1px solid #2e2e2e",
-              borderRadius: 8,
-              padding: "10px 14px",
-              color: "#e8e8e8",
-              fontSize: 11,
-              letterSpacing: "0.1em",
-              fontFamily: "inherit",
-              width: "min(340px, 100%)",
-              outline: "none",
-            }}
-          />
-          <div
-            style={{
-              display: "flex",
-              gap: 20,
-              fontSize: 9.5,
-              letterSpacing: "0.14em",
-              color: "#5a5a5a",
-            }}
-          >
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span aria-hidden style={{ width: 10, height: 10, border: "1px solid #c9c9c9", position: "relative" }}>
-                <span style={{ position: "absolute", inset: 3, background: "#5a5a5a" }} />
-              </span>
-              ONLINE — SOLID
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span aria-hidden style={{ width: 10, height: 10, border: "1px dashed #5a5a5a" }} />
-              IDLE — DASHED
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span aria-hidden style={{ width: 10, height: 10, border: "1px solid #2e2e2e", opacity: 0.72 }} />
-              OFFLINE — DIM
-            </span>
-          </div>
-        </div>
-
-        <div className="agent-grid">
-          {slice.map((a) => {
-              const active = a.registryId === selectedId;
-              const size = 14 + a.reputation * 14;
-              const border = active
-                ? "#e8e8e8"
-                : a.status === "online"
-                  ? "#3a3a3a"
-                  : "#232323";
-              return (
-                <button
-                  key={a.registryId}
-                  onClick={() => setSelectedId(a.registryId)}
-                  className="mono"
                   style={{
-                    cursor: "pointer",
-                    textAlign: "left",
-                    background: active ? "#0d0d0d" : "#000",
-                    border: `1px ${a.status === "idle" && !active ? "dashed" : "solid"} ${border}`,
-                    borderRadius: 10,
-                    padding: "20px 18px 18px",
+                    position: "absolute",
+                    inset: 0,
                     display: "flex",
-                    flexDirection: "column",
-                    gap: 0,
-                    color: "inherit",
-                    fontFamily: "inherit",
-                    opacity: a.status === "offline" && !active ? 0.72 : 1,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 24,
                   }}
                 >
-                  <span
+                  <p
+                    className="mono"
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
+                      fontSize: 11,
+                      letterSpacing: "0.14em",
+                      color: "#5a5a5a",
+                      textAlign: "center",
                     }}
                   >
+                    No live events yet — run the demo agent or the swarm.
+                  </p>
+                </div>
+              ) : (
+                <NetworkGraph events={events} selected={selected} onSelect={setSelected} />
+              )}
+            </div>
+          </MacWindow>
+
+          <MacWindow
+            title={
+              selectedAgent
+                ? `AGENT — ${selectedAgent.pseudonym.slice(0, 12)}`
+                : "AGENT — SELECT A CUBE"
+            }
+          >
+            <div style={{ padding: "24px 24px 26px" }}>
+              {selectedAgent ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <span
                       aria-hidden
                       style={{
-                        width: size,
-                        height: size,
-                        border: `1px solid ${active ? "#fff" : a.status === "online" ? "#c9c9c9" : "#5a5a5a"}`,
+                        width: 28,
+                        height: 28,
+                        border: "1px solid #e8e8e8",
                         position: "relative",
                         flexShrink: 0,
                       }}
                     >
-                      {(active || a.status === "online") && (
-                        <span
+                      <span style={{ position: "absolute", inset: 10, background: "#e8e8e8" }} />
+                    </span>
+                    <div>
+                      <div
+                        className="mono"
+                        style={{ fontSize: 15, color: "#f4f4f4", letterSpacing: "0.06em" }}
+                      >
+                        #{selectedAgent.pseudonym}
+                      </div>
+                      <div
+                        className="mono"
+                        style={{
+                          marginTop: 5,
+                          fontSize: 10,
+                          letterSpacing: "0.16em",
+                          color: "#5a5a5a",
+                        }}
+                      >
+                        CATEGORY {selectedAgent.category.toUpperCase()} · LAST SEEN{" "}
+                        {fmtAge(selectedAgent.last.created_at).toUpperCase()} AGO
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 24,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, 1fr)",
+                      gap: 16,
+                    }}
+                  >
+                    {[
+                      { value: String(selectedAgent.count), label: "EVENTS" },
+                      { value: fmtTime(selectedAgent.last.created_at), label: "LAST EVENT" },
+                      {
+                        value: selectedAgent.last.risk_class.toUpperCase(),
+                        label: "LAST RISK",
+                      },
+                    ].map((item) => (
+                      <div key={item.label}>
+                        <div className="mono" style={{ fontSize: 15, color: "#e8e8e8" }}>
+                          {item.value}
+                        </div>
+                        <div
+                          className="mono"
                           style={{
-                            position: "absolute",
-                            inset: size / 2 - 2,
-                            background: active ? "#fff" : "#5a5a5a",
+                            marginTop: 5,
+                            fontSize: 9,
+                            letterSpacing: "0.16em",
+                            color: "#5a5a5a",
                           }}
-                        />
+                        >
+                          {item.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div
+                    className="mono"
+                    style={{
+                      marginTop: 24,
+                      borderTop: "1px solid rgba(255,255,255,0.1)",
+                      paddingTop: 16,
+                      display: "grid",
+                      gap: 10,
+                    }}
+                  >
+                    {selectedEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          fontSize: 10,
+                          letterSpacing: "0.06em",
+                        }}
+                      >
+                        <span style={{ color: "#5a5a5a" }}>{fmtTime(event.created_at)}</span>
+                        <span style={{ color: "#c9c9c9", flex: 1, minWidth: 0 }}>
+                          {event.event_type}
+                        </span>
+                        <OutcomeTag outcome={event.outcome} />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 22,
+                  }}
+                >
+                  <p style={{ fontSize: 14, lineHeight: 1.65, color: "#8a8a8a" }}>
+                    Select a cube to inspect its category, event count, risk, and recent
+                    projected activity. The public surface never shows tool arguments,
+                    resources, prompts, or tenant identity.
+                  </p>
+                  <div className="mono" style={{ display: "grid", gap: 10 }}>
+                    {categories.map(([category, count]) => (
+                      <div
+                        key={category}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          fontSize: 10,
+                          letterSpacing: "0.14em",
+                          color: "#8a8a8a",
+                        }}
+                      >
+                        <span>{category.toUpperCase()}</span>
+                        <span style={{ color: "#e8e8e8" }}>{count}</span>
+                      </div>
+                    ))}
+                    {categories.length === 0 && (
+                      <span style={{ fontSize: 10, letterSpacing: "0.14em", color: "#3f3f3f" }}>
+                        NO CATEGORIES OBSERVED
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </MacWindow>
+        </div>
+      )}
+
+      <div className="section-pad" style={{ paddingTop: 0 }}>
+        <div className="network-grid">
+          <MacWindow title="EVENT STREAM — NEWEST FIRST">
+            <div style={{ padding: "20px 24px 24px" }}>
+              {feed.length === 0 ? (
+                <p
+                  className="mono"
+                  style={{ fontSize: 11, letterSpacing: "0.14em", color: "#5a5a5a" }}
+                >
+                  No live events yet — run the demo agent or the swarm.
+                </p>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {feed.map((event) => (
+                    <div
+                      key={event.id}
+                      className="mono"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "54px 1fr auto",
+                        alignItems: "center",
+                        gap: 12,
+                        fontSize: 10,
+                        letterSpacing: "0.06em",
+                      }}
+                    >
+                      <span style={{ color: "#5a5a5a" }}>{fmtTime(event.created_at)}</span>
+                      <span style={{ color: "#c9c9c9", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {event.event_type}
+                        <span style={{ color: "#3f3f3f" }}>
+                          {" · "}
+                          {event.agent_category} · #{event.agent_pseudonym.slice(0, 6)} ·{" "}
+                          {event.risk_class}
+                        </span>
+                      </span>
+                      <OutcomeTag outcome={event.outcome} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </MacWindow>
+
+          <MacWindow title="LEGEND">
+            <div style={{ padding: "20px 24px 24px" }}>
+              <div className="mono" style={{ display: "grid", gap: 12, fontSize: 10, letterSpacing: "0.1em" }}>
+                {STATE_LEGEND.map((item) => (
+                  <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 12,
+                        height: 12,
+                        border: item.border,
+                        position: "relative",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {item.core && (
+                        <span style={{ position: "absolute", inset: 3, background: "#e8e8e8" }} />
                       )}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 9,
-                        letterSpacing: "0.16em",
-                        padding: "4px 8px",
-                        border: "1px solid #2e2e2e",
-                        color: tier(a.reputation) === "TRUSTED" ? "#e8e8e8" : "#5a5a5a",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {tier(a.reputation)}
-                    </span>
-                  </span>
-
+                    <span style={{ color: "#8a8a8a" }}>{item.label}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span
+                    aria-hidden
                     style={{
-                      marginTop: 16,
-                      fontSize: 16,
-                      fontWeight: 700,
-                      color: "#e8e8e8",
-                      fontFamily: "var(--font-sans, inherit)",
-                      letterSpacing: "-0.01em",
+                      width: 10,
+                      height: 10,
+                      border: "1px solid #e8e8e8",
+                      transform: "rotate(45deg)",
+                      marginLeft: 1,
+                      marginRight: 1,
+                      flexShrink: 0,
                     }}
-                  >
-                    {a.name}
-                  </span>
-                  <span
-                    style={{
-                      marginTop: 4,
-                      fontSize: 10,
-                      letterSpacing: "0.08em",
-                      color: "#5a5a5a",
-                    }}
-                  >
-                    {a.agentKey} · {a.status.toUpperCase()}
-                  </span>
-
-                  <span style={{ marginTop: 16 }}>
-                    <span
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 10,
-                        letterSpacing: "0.12em",
-                        color: "#8a8a8a",
-                      }}
-                    >
-                      <span>REP {a.reputation.toFixed(2)}</span>
-                      <span>{a.authorizations.toLocaleString()} AUTHS</span>
-                    </span>
+                  />
+                  <span style={{ color: "#8a8a8a" }}>PAYMENT — TRANSACTION MARKER</span>
+                </div>
+                <div style={{ height: 1, background: "rgba(255,255,255,0.1)" }} />
+                {ACTION_LEGEND.map((item) => (
+                  <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span
                       aria-hidden
                       style={{
-                        display: "block",
-                        marginTop: 7,
-                        height: 5,
-                        border: "1px solid #2e2e2e",
-                        position: "relative",
+                        width: 26,
+                        height: 0,
+                        borderTop: `2px ${item.stroke} ${
+                          item.stroke === "dotted" ? "#8a8a8a" : "#e8e8e8"
+                        }`,
+                        flexShrink: 0,
                       }}
-                    >
-                      <span
-                        style={{
-                          position: "absolute",
-                          inset: 1,
-                          width: `calc(${Math.round((a.reputation / 1) * 100)}% - 2px)`,
-                          background: "#8a8a8a",
-                        }}
-                      />
-                    </span>
-                    <span
-                      aria-hidden
-                      style={{
-                        display: "block",
-                        marginTop: 5,
-                        height: 5,
-                        border: "1px solid #2e2e2e",
-                        position: "relative",
-                      }}
-                    >
-                      <span
-                        style={{
-                          position: "absolute",
-                          inset: 1,
-                          width: `calc(${Math.round((a.authorizations / MAX_AUTHS) * 100)}% - 2px)`,
-                          background: "#3a3a3a",
-                        }}
-                      />
-                    </span>
-                  </span>
-
-                  <span
-                    style={{
-                      marginTop: 14,
-                      paddingTop: 12,
-                      borderTop: "1px solid rgba(255,255,255,0.08)",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: 9.5,
-                      letterSpacing: "0.1em",
-                      color: "#5a5a5a",
-                    }}
-                  >
-                    <span>
-                      {a.chain.toUpperCase()} · {a.lastSeen.toUpperCase()}
-                    </span>
-                    <span>
-                      {a.escalated} ESC · {a.denied} DEN
-                    </span>
-                  </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {slice.length === 0 && (
-          <div
-            className="mono"
-            style={{
-              marginTop: 20,
-              border: "1px solid #232323",
-              borderRadius: 10,
-              padding: "34px 24px",
-              textAlign: "center",
-              fontSize: 11,
-              letterSpacing: "0.14em",
-              color: "#5a5a5a",
-            }}
-          >
-            NO AGENTS MATCH “{query.trim().toUpperCase()}” — TRY ANOTHER ID, NAME, OR ENS.
-          </div>
-        )}
-
-        <div
-          className="mono"
-          style={{
-            marginTop: 22,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 12,
-            fontSize: 10,
-            letterSpacing: "0.14em",
-            color: "#5a5a5a",
-          }}
-        >
-          <span>
-            SHOWING{" "}
-            {filtered.length === 0
-              ? "0"
-              : `${cur * PAGE_SIZE + 1}–${Math.min((cur + 1) * PAGE_SIZE, filtered.length)}`}{" "}
-            OF {filtered.length}
-          </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              disabled={cur === 0}
-              style={{
-                cursor: cur === 0 ? "default" : "pointer",
-                fontSize: 10,
-                letterSpacing: "0.14em",
-                padding: "8px 14px",
-                border: "1px solid #2e2e2e",
-                background: "transparent",
-                color: cur === 0 ? "#2e2e2e" : "#c9c9c9",
-                fontFamily: "inherit",
-              }}
-            >
-              ← PREV
-            </button>
-            <span style={{ color: "#8a8a8a" }}>
-              PAGE {cur + 1} / {pages}
-            </span>
-            <button
-              onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
-              disabled={cur >= pages - 1}
-              style={{
-                cursor: cur >= pages - 1 ? "default" : "pointer",
-                fontSize: 10,
-                letterSpacing: "0.14em",
-                padding: "8px 14px",
-                border: "1px solid #2e2e2e",
-                background: "transparent",
-                color: cur >= pages - 1 ? "#2e2e2e" : "#c9c9c9",
-                fontFamily: "inherit",
-              }}
-            >
-              NEXT →
-            </button>
-          </span>
+                    />
+                    <span style={{ color: "#8a8a8a" }}>{item.label}</span>
+                  </div>
+                ))}
+                <div style={{ height: 1, background: "rgba(255,255,255,0.1)" }} />
+                <span style={{ color: "#5a5a5a" }}>
+                  COUNTERS — AGGREGATES OVER ALL PROJECTED EVENTS
+                </span>
+              </div>
+            </div>
+          </MacWindow>
         </div>
       </div>
 

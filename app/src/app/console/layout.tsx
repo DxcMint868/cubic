@@ -2,21 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMemo } from "react";
 import MacWindow from "@/components/MacWindow";
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import { useWallet } from "@/components/WalletProvider";
-
-const ITEMS = [
-  { label: "OVERVIEW", href: "/console" },
-  { label: "AGENTS", href: "/console/agents" },
-  { label: "TASKS", href: "/console/tasks" },
-  { label: "POLICIES", href: "/console/policies" },
-  { label: "APPROVALS", href: "/console/approvals", badge: "3" },
-  { label: "AUDIT", href: "/console/audit" },
-  { label: "PAYMENTS", href: "/console/payments" },
-  { label: "SETTINGS", href: "/console/settings" },
-];
+import { deriveApprovals } from "@/components/console/derive";
+import { getAuditEventsPaged, useApi } from "@/lib/api";
 
 export default function ConsoleLayout({
   children,
@@ -25,6 +17,28 @@ export default function ConsoleLayout({
 }) {
   const pathname = usePathname();
   const { address, connect } = useWallet();
+  const approvals = useApi("console-layout-approvals", () =>
+    getAuditEventsPaged({ maxPages: 3 }),
+  );
+  const pendingApprovals = useMemo(
+    () => deriveApprovals(approvals.data ?? []).pending.length,
+    [approvals.data],
+  );
+
+  const ITEMS = [
+    { label: "OVERVIEW", href: "/console" },
+    { label: "AGENTS", href: "/console/agents" },
+    { label: "TASKS", href: "/console/tasks" },
+    { label: "POLICIES", href: "/console/policies" },
+    {
+      label: "APPROVALS",
+      href: "/console/approvals",
+      badge: pendingApprovals > 0 ? String(pendingApprovals) : undefined,
+    },
+    { label: "AUDIT", href: "/console/audit" },
+    { label: "PAYMENTS", href: "/console/payments" },
+    { label: "SETTINGS", href: "/console/settings" },
+  ];
 
   return (
     <main
