@@ -50,10 +50,15 @@ pnpm dev
 # Needs the dev server above AND DATABASE_URL in this shell's env
 # (the script resolves the seeded task via a direct DB query).
 pnpm --filter app demo
-# → prints the trace URL + beat summary table at the end
+# → prints the trace URL + console task URL + beat summary table at the end
 
 # adversarial reel (no server needed, DATABASE_URL only; deterministic)
 pnpm --filter app demo:adversarial
+
+# treasury branch (needs the dev server + DATABASE_URL in this shell; no
+# Hedera env — dev-mode executor, no funds move)
+pnpm --filter app demo:treasury
+# → prints the trace URL + console task URL + treasury beat table at the end
 
 # full automated coverage (live chain skips cleanly without a funded operator)
 pnpm --filter app exec vitest run tests/e2e.demo.test.ts
@@ -85,8 +90,9 @@ endpoint unless the demo tenant's `scanner.scan` tool row is repointed.
 9. `deploy.production` → ESCALATE → resolve approved → prints the result.
 10. `github.read_file {path:".env.production"}` → expect DENY
     `secret_resource`.
-11. `task.complete` → expect `task.completed`; prints the trace URL + beat
-    table (script labels these `[10/11]` and `[11/11]`).
+11. `task.complete` → expect `task.completed`; prints the trace URL +
+    console task URL (`/console/tasks/<id>`) + beat table (script labels
+    these `[10/11]` and `[11/11]`).
 
 ## Adversarial fixtures (`--adversarial`, in-process)
 
@@ -98,6 +104,37 @@ endpoint unless the demo tenant's `scanner.scan` tool row is repointed.
 | tampered capability | consume random uuid | rejected `not_found` (no event — nothing attributable, plan-03 exemption) |
 | failed payment | purchase with `X402_SIMULATE_FAILURE=1` | `payment.failed`, capability `revoked`, zero `tool.execution.*` |
 | low reputation | `agent:lab-1` (fixture 0.50) read | ESCALATE `reputation_below_threshold` |
+
+## Treasury branch (`demo:treasury`, plan-11)
+
+The capital-management demo: a CIO asks the agent to rebalance a $3M
+treasury. Same gateway, same `default-v1` rules — no engine changes, no new
+reason codes. The drama comes from classification alone: `treasury.swap` and
+`treasury.transfer` normalize to high risk (→ ESCALATE), while
+`treasury.stake` splits on a $100 notional threshold (→ medium/ALLOW below,
+high/ESCALATE at or above).
+
+| Beat | Call | Deterministic outcome |
+|---|---|---|
+| rebalance | `treasury.swap {asset_pair:"USDC/ETH", $240,000}` | ESCALATE `risk_requires_approval` → approve → capability → execution (dev receipt) |
+| payroll | `treasury.transfer {destination:"payroll/ops-multisig", $85,000}` | ESCALATE → approve → execution |
+| stake pair | `treasury.stake {protocol:"lido", $50}` then `{…, $5,000}` | $50 → ALLOW (`default-allow`) + execution; $5,000 → ESCALATE — same action, risk did the talking |
+| drain | `treasury.swap {asset_pair:"USDC/ETH", $450,000}` | ESCALATE → approver **rejects** → no capability, no execution (`ledger.approval.completed` outcome `rejected` on the record) |
+
+Honesty rules (same bar as the rest of this file):
+
+- Every treasury receipt says `(dev mode)` with `verdict: "simulated"` —
+  no funds move, nothing claims otherwise.
+- The $450k "DENY" is an approver rejection, not a policy deny: the swap
+  escalates under the unchanged risk rule and the CIO rejects it. The docs,
+  script narration, and tests all frame it exactly that way.
+- ETH notionals use the fixture reference rate ($100/ETH, stated in the
+  script and tests) — deterministic, not a market quote.
+- The script closes its treasury task (`task.complete`), so the main demo's
+  latest-open-task lookup is unaffected. It prints the trace URL +
+  `/console/tasks/<id>` at the end; the same events stream to `/network`.
+- `POST /api/demo/run` now also returns `console_path` alongside
+  `trace_path`.
 
 ## Failure recovery
 
@@ -118,5 +155,9 @@ endpoint unless the demo tenant's `scanner.scan` tool row is repointed.
 - `POST /api/demo/run` is unauthenticated and spends real money: it re-seeds
   (wiping demo-tenant state) and settles 25¢ per call. Never expose the demo
   gateway publicly during a take.
-- One demo at a time: the script and the route both re-seed and pick the
-  latest open task — concurrent runs will resolve each other's tasks.
+- One demo at a time: the script, the treasury script, and the route all
+  re-seed and pick the latest open task — concurrent runs will resolve each
+  other's tasks (treasury additionally grafts tools/policy rows, so never run
+  it alongside the main demo or the swarm). An aborted treasury run closes its
+  own task best-effort; if the gateway was unreachable, re-seed before the
+  next main-demo take.

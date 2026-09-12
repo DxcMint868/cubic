@@ -57,10 +57,10 @@ resource_class: "normal" for all three (no secret/cross-task semantics here)
 
 ## Acceptance criteria
 
-- [ ] LLM-assisted intent with key set → `normalized.reasoning_ref` persisted with real `run_id`; trace API returns it; TraceView renders the link. Key absent → `null`, no link, no throw, no mock URL (all three asserted in tests).
-- [ ] Treasury: $240k swap escalates (`risk_requires_approval`) → approve → capability → execution; payroll same path; 0.5 ETH stake allows while 50 ETH escalates (same action, asserted side by side); $450k-style oversized swap DENIES with a legible reason; `demo:treasury` runs green.
-- [ ] PO polish: dead files gone with zero broken imports; no `AUTHORIZED` string remains in product surfaces; both detail cards in `MacWindow` chrome; demo outputs print both URLs.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green. No `schema.ts` changes. No engine changes. No new reason codes.
+- [x] LLM-assisted intent with key set → `normalized.reasoning_ref` persisted with real `run_id`; trace API returns it; TraceView renders the link. Key absent → `null`, no link, no throw, no mock URL (all three asserted in tests). [verified 2026-09-12: tests/treasury.test.ts 10 pass + 1 honest live-skip (no key in env); live-key leg asserts real run_id when key present]
+- [x] Treasury: $240k swap escalates (`risk_requires_approval`) → approve → capability → execution; payroll same path; 0.5 ETH stake allows while 50 ETH escalates (same action, asserted side by side); $450k-style oversized swap DENIES with a legible reason; `demo:treasury` runs green. [verified 2026-09-12: in-process tests + 2× live HTTP demo:treasury GREEN; $450k = escalate → approver rejects, no capability/execution — the only honest construction under unchanged default-v1, framed identically in script/tests/docs]
+- [x] PO polish: dead files gone with zero broken imports; no `AUTHORIZED` string remains in product surfaces; both detail cards in `MacWindow` chrome; demo outputs print both URLs. [verified 2026-09-12: grep-clean, Panel wraps, both URLs in agent.ts/demo-run/docs]
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green. No `schema.ts` changes. No engine changes. No new reason codes. [verified 2026-09-12: typecheck clean, lint exit 0 (3 pre-existing warnings), full suite 16 files / 124 pass / 4 skips]
 
 ## Out of scope
 

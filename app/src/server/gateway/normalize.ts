@@ -1,5 +1,6 @@
 import { config } from "../config";
 import type { NormalizedIntent, RiskClass } from "../domain";
+import { extractReasoningRef, traceAssistedNormalize } from "../reasoning/langsmith";
 
 export interface NormalizeInput {
   tool: string;
@@ -54,6 +55,25 @@ export function normalize({ tool, args, taskId }: NormalizeInput): NormalizedInt
       resource = taskId;
       risk = "low";
       break;
+    // plan-11 EXACT treasury rows — classification only (same arg-based
+    // precedent as the secret-path rule below). No engine edits: the existing
+    // risk-approval rule splits the stake pair on risk_class, and
+    // resource_class stays "normal" (no secret/cross-task semantics here).
+    case "treasury.swap":
+      action = "treasury_swap";
+      resource = `treasury/${String(args.asset_pair)}`;
+      risk = "high";
+      break;
+    case "treasury.transfer":
+      action = "treasury_transfer";
+      resource = `treasury/${String(args.destination)}`;
+      risk = "high";
+      break;
+    case "treasury.stake":
+      action = "treasury_stake";
+      resource = `treasury/${String(args.protocol)}`;
+      risk = Number(args.amount_usd_cents ?? 0) >= 10000 ? "high" : "medium";
+      break;
     default:
       action = tool;
       resource = tool;
@@ -70,6 +90,12 @@ export function normalize({ tool, args, taskId }: NormalizeInput): NormalizedInt
 
   const intent: NormalizedIntent = { tool, action, resource, risk_class: risk, resource_class };
   if (amount !== undefined) intent.amount_usd_cents = amount;
+  // plan-11: client-supplied reasoning link passes through (validated —
+  // malformed shapes are dropped, never throw). Rules-only output carries an
+  // explicit null (never undefined) per the contract. The LLM-assist path
+  // below supersedes it with the fresh run when it succeeds.
+  const passthrough = extractReasoningRef(args);
+  intent.reasoning_ref = passthrough ?? null;
   return intent;
 }
 
@@ -87,7 +113,9 @@ export async function normalizeIntent(input: NormalizeInput): Promise<Normalized
 }
 
 async function llmAssist(provider: string, input: NormalizeInput, base: NormalizedIntent): Promise<NormalizedIntent> {
-  void input;
-  void base;
-  throw new Error(`LLM intent provider "${provider}" is not wired in plan-02; deterministic rules apply`);
+  // plan-11: the LLM-assist path records a real LangSmith run for this
+  // normalization (traceable wrapper in reasoning/langsmith.ts). Missing key
+  // or any failure → base untouched (passthrough preserved, ref null/absent).
+  void provider;
+  return traceAssistedNormalize(input, base);
 }
