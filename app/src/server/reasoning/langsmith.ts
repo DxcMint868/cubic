@@ -125,5 +125,7 @@ async function attemptTrace(
     shareUrl = null;
   }
   const ref: ReasoningRef = { run_id: runId, share_url: shareUrl };
-  return { ...base, reasoning_ref: ref };
+  // plan-13: the assist path mints the ref server-side — persist the origin
+  // so the trace renders it as a trusted link, distinct from CLIENT refs.
+  return { ...base, reasoning_ref: { ...ref, origin: "server-minted" as const } };
 }

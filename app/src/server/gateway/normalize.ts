@@ -95,7 +95,9 @@ export function normalize({ tool, args, taskId }: NormalizeInput): NormalizedInt
   // explicit null (never undefined) per the contract. The LLM-assist path
   // below supersedes it with the fresh run when it succeeds.
   const passthrough = extractReasoningRef(args);
-  intent.reasoning_ref = passthrough ?? null;
+  // plan-13: client-supplied refs are persisted WITH an origin label so the
+  // trace can never render them as trusted server links.
+  intent.reasoning_ref = passthrough ? { ...passthrough, origin: "client-supplied" as const } : null;
   return intent;
 }
 
