@@ -1,0 +1,525 @@
+// plan-16 — demo chat turn runner (server/demo/chat.ts).
+//
+// POST /api/demo/chat accepts {message, template_id?, task_id?}. Template ids
+// resolve to EXACT {tool, arguments} with no LLM. Free text goes through
+// parse.ts (OpenRouter pinned; any failure → {tool: null} → display-only
+// no-tool state, gateway never called). Origin stays "agent".
+//
+// Execution goes through the identical orchestrator two ways: tools backed by
+// the 5 MCP tools run through a fresh-per-call MCP SDK Client (streamable
+// HTTP, x-cubic-agent header) against our own /api/mcp; anything else
+// (deploy.production, treasury.*, unknown tools) runs runToolCall in-process.
+// Both funnel into runToolCall, so audit chains are transport-independent.
+
+import { createHash } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { config } from "../config";
+import { db } from "../db/client";
+import { agents, intents, policies, tasks, tenants, tools } from "../db/schema";
+import type { NormalizedIntent } from "../domain";
+import { runToolCall, type ToolCallData } from "../gateway/orchestrator";
+import { consumeCapability } from "../capability/verify";
+import type { Rule } from "../gateway/policy/engine";
+import { CHAT_TEMPLATES, getTemplate, type ChatTemplate } from "./templates";
+import { chatModel, parseFreeText, parseProviderConfigured } from "./parse";
+
+export { CHAT_TEMPLATES };
+
+const AGENT_KEY = "agent:8472";
+const DEMO_CLIENT_LABEL = "Demo agent (MCP client)";
+
+export const NO_TOOL_MESSAGE = "No tool matched — nothing was sent to the gateway";
+
+// Gateway tools backed by the MCP facade (sdk names in server/mcp/server.ts).
+const MCP_GATEWAY_TO_SDK: Record<string, string> = {
+  "scanner.scan": "scanner_scan",
+  "github.get_pull_request": "github_get_pull_request",
+  "github.read_file": "github_read_file",
+  "github.merge_pull_request": "github_merge_pull_request",
+  "task.complete": "task_complete",
+};
+
+const TREASURY_TOOLS = [
+  { name: "treasury.swap", category: "treasury", defaultRiskClass: "high", executor: "treasury", executorConfig: {} },
+  { name: "treasury.transfer", category: "treasury", defaultRiskClass: "high", executor: "treasury", executorConfig: {} },
+  { name: "treasury.stake", category: "treasury", defaultRiskClass: "medium", executor: "treasury", executorConfig: {} },
+];
+
+export interface ChatTurn {
+  kind: "tool" | "no-tool" | "lifecycle";
+  template_id: string | null;
+  chat_text: string;
+  client_label: string;
+  task_id: string | null;
+  tool: string | null;
+  arguments: Record<string, unknown>;
+  transport: "mcp" | "gateway" | null;
+  intent: NormalizedIntent | null;
+  decision: ToolCallData["decision"] | null;
+  matched_policy: string | null;
+  matched_rule_id: string | null;
+  reasons: Array<{ code: string; detail?: string }>;
+  risk_score: number | null;
+  approval: { id: string; provider: string; status: string } | null;
+  approval_outcome: "approved" | "rejected" | null;
+  capability: ToolCallData["capability"];
+  execution: ToolCallData["execution"];
+  payment: ToolCallData["payment"];
+  payment_required: ToolCallData["payment_required"];
+  lines: { capability?: string; execution?: string; payment?: string };
+  receipt: { amount_usd_cents: number; network: "hedera"; ref: string; ref_kind: "settlement" | "challenge" } | null;
+  rejections: Array<{ step: string; reason: string; capability_id: string }>;
+  trace_url: string | null;
+  network_url: string;
+  provider: { configured: boolean; model: string };
+  tools: { connected: number | null };
+  no_tool_message: string | null;
+}
+
+// -- MCP client ---------------------------------------------------------------
+
+let mcpToolsCache: string[] | null = null;
+
+export function clearMcpCacheForTests(): void {
+  mcpToolsCache = null;
+}
+
+function mcpUrl(baseUrl: string): URL {
+  return new URL("/api/mcp", baseUrl);
+}
+
+async function listMcpTools(baseUrl: string): Promise<string[]> {
+  if (mcpToolsCache) return mcpToolsCache;
+  const client = new Client({ name: "cubic-demo-chat", version: "0.1.0" });
+  const transport = new StreamableHTTPClientTransport(mcpUrl(baseUrl), {
+    requestInit: { headers: { "x-cubic-agent": AGENT_KEY } },
+  });
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    mcpToolsCache = listed.tools.map((t) => t.name);
+    return mcpToolsCache;
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+export async function mcpToolCount(baseUrl: string): Promise<number | null> {
+  try {
+    return (await listMcpTools(baseUrl)).length;
+  } catch {
+    return null;
+  }
+}
+
+interface McpCallResult {
+  ok: true;
+  data: ToolCallData;
+}
+
+async function callViaMcp(
+  baseUrl: string,
+  sdkTool: string,
+  args: Record<string, unknown>,
+): Promise<McpCallResult> {
+  const client = new Client({ name: "cubic-demo-chat", version: "0.1.0" });
+  const transport = new StreamableHTTPClientTransport(mcpUrl(baseUrl), {
+    requestInit: { headers: { "x-cubic-agent": AGENT_KEY } },
+  });
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({ name: sdkTool, arguments: args });
+    const content = ((result as unknown as { content?: Array<{ type: string; text?: string }> }).content ?? [])
+      .filter((c) => c.type === "text" && typeof c.text === "string")
+      .map((c) => c.text as string)
+      .join("");
+    if (!content) throw new Error(`MCP tool ${sdkTool} returned no text content`);
+  const body = JSON.parse(content) as { ok?: boolean; error?: { message?: string } };
+    // The MCP facade returns the raw tool-call data JSON on success (no `ok`
+    // wrapper) and {ok: false, error} on isError — distinguish explicitly.
+    if (body.ok === false) {
+      throw new Error(`gateway rejected ${sdkTool}: ${body.error?.message ?? "unknown error"}`);
+    }
+    return { ok: true, data: body as unknown as ToolCallData };
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+// -- Fixtures -----------------------------------------------------------------
+
+async function resolveTenant(): Promise<{ id: string }> {
+  const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
+  if (!tenant) throw new Error(`demo chat: tenant missing (${config().DEMO_TENANT_SLUG})`);
+  return { id: tenant.id };
+}
+
+// Treasury tool rows + allowlist graft (idempotent). Mirrors the plan-11
+// treasury script's graft; demo-surface data setup, not an engine change.
+async function ensureTreasuryFixtures(tenantId: string): Promise<void> {
+  await db()
+    .insert(tools)
+    .values(
+      TREASURY_TOOLS.map((t) => ({ tenantId, ...t })),
+    )
+    .onConflictDoNothing({ target: [tools.tenantId, tools.name] });
+  const [policy] = await db()
+    .select()
+    .from(policies)
+    .where(and(eq(policies.tenantId, tenantId), eq(policies.name, "default-v1")));
+  if (!policy) throw new Error("demo chat: default-v1 missing");
+  const rules = [...(policy.rules as Rule[])];
+  const at = rules.findIndex((r) => r.id === "tool-allowlist");
+  if (at < 0) throw new Error("demo chat: tool-allowlist rule missing in default-v1");
+  const names = TREASURY_TOOLS.map((t) => t.name);
+  if (!names.every((n) => rules[at].tools?.includes(n))) {
+    rules[at] = { ...rules[at], tools: [...(rules[at].tools ?? []), ...names.filter((n) => !rules[at].tools?.includes(n))] };
+    await db().update(policies).set({ rules }).where(eq(policies.id, policy.id));
+  }
+}
+
+// -- Turn assembly --------------------------------------------------------------
+
+function shortRef(value: string): string {
+  return value.slice(0, 8);
+}
+
+function buildTurn(base: Partial<ChatTurn> & { chat_text: string; task_id: string | null }): ChatTurn {
+  return {
+    kind: "tool",
+    template_id: null,
+    client_label: DEMO_CLIENT_LABEL,
+    tool: null,
+    arguments: {},
+    transport: null,
+    intent: null,
+    decision: null,
+    matched_policy: null,
+    matched_rule_id: null,
+    reasons: [],
+    risk_score: null,
+    approval: null,
+    approval_outcome: null,
+    capability: null,
+    execution: null,
+    payment: null,
+    payment_required: null,
+    lines: {},
+    receipt: null,
+    rejections: [],
+    trace_url: null,
+    network_url: "/network",
+    provider: { configured: parseProviderConfigured(), model: chatModel() },
+    tools: { connected: null },
+    no_tool_message: null,
+    ...base,
+  };
+}
+
+async function hydrateTurn(
+  partial: Partial<ChatTurn> & { chat_text: string },
+  data: ToolCallData,
+  transport: "mcp" | "gateway",
+  toolsConnected: number | null,
+): Promise<ChatTurn> {
+  const [intentRow] = await db().select().from(intents).where(eq(intents.id, data.intent_id));
+  const intent = (intentRow?.normalized ?? null) as NormalizedIntent | null;
+  const taskId = intentRow?.taskId ?? null;
+
+  let approval: ChatTurn["approval"] = null;
+  if (data.approval_id) {
+    const { approvals } = await import("../db/schema");
+    const [row] = await db().select().from(approvals).where(eq(approvals.id, data.approval_id));
+    approval = row ? { id: row.id, provider: row.provider, status: row.status } : null;
+  }
+
+  const lines: ChatTurn["lines"] = {};
+  if (data.capability) {
+    lines.capability = `capability ${shortRef(data.capability.nonce)} · ${data.capability.action} · expires ${data.capability.expires_at}`;
+  }
+  if (data.execution) {
+    lines.execution = data.execution.result_summary ?? `execution ${data.execution.status}`;
+  }
+
+  // Amount comes from the payments row (the DB is the source of truth).
+  let paidCents: number | null = null;
+  if (data.payment) {
+    const schema = await import("../db/schema");
+    const [paymentRow] = await db()
+      .select()
+      .from(schema.payments)
+      .where(eq(schema.payments.id, data.payment.payment_id));
+    paidCents = paymentRow?.amountUsdCents ?? null;
+  }
+  if (data.payment?.status === "completed") {
+    const amount = paidCents != null ? `$${(paidCents / 100).toFixed(2)}` : "settled";
+    lines.payment = `${amount} · hedera · ${shortRef(data.payment.settlement_ref ?? "")}`;
+  } else if (data.payment?.status === "failed") {
+    lines.payment = `payment failed · ${data.payment.error_code ?? "unknown"}`;
+  } else if (data.payment_required) {
+    lines.payment = `payment required $${(data.payment_required.price_usd_cents / 100).toFixed(2)} · hedera`;
+  }
+
+  // Scan receipt: amount + hedera + short ref. Settlement ref when the payment
+  // completed; otherwise the challenge short-hash (labeled as such — a
+  // discovery turn never claims a settlement).
+  let receipt: ChatTurn["receipt"] = null;
+  if (data.payment?.status === "completed" && data.payment.settlement_ref) {
+    receipt = {
+      amount_usd_cents: paidCents ?? 0,
+      network: "hedera",
+      ref: shortRef(data.payment.settlement_ref),
+      ref_kind: "settlement",
+    };
+  } else if (data.payment_required) {
+    receipt = {
+      amount_usd_cents: data.payment_required.price_usd_cents,
+      network: "hedera",
+      ref: shortRef(createHash("sha256").update(JSON.stringify(data.payment_required.challenge)).digest("hex")),
+      ref_kind: "challenge",
+    };
+  }
+
+  return buildTurn({
+    ...partial,
+    task_id: taskId,
+    transport,
+    intent,
+    decision: data.decision,
+    matched_policy: data.matched_policy,
+    matched_rule_id: data.matched_rule_id,
+    reasons: data.reasons,
+    risk_score: data.risk_score,
+    approval,
+    capability: data.capability,
+    execution: data.execution,
+    payment: data.payment,
+    payment_required: data.payment_required,
+    lines,
+    receipt,
+    trace_url: taskId ? `/console/tasks/${taskId}` : null,
+    tools: { connected: toolsConnected },
+  });
+}
+
+// -- Entry point ------------------------------------------------------------------
+
+export interface ChatInput {
+  message?: string;
+  template_id?: string;
+  task_id?: string;
+}
+
+export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<ChatTurn> {
+  const tenant = await resolveTenant();
+  const toolsConnected = await mcpToolCount(baseUrl).catch(() => null);
+
+  let template: ChatTemplate | null = null;
+  let chatText = "";
+  let tool: string | null = null;
+  let args: Record<string, unknown> = {};
+  let kind: ChatTurn["kind"] = "tool";
+
+  if (input.template_id) {
+    template = getTemplate(input.template_id);
+    if (!template) throw new Error(`unknown template: ${input.template_id}`);
+    chatText = template.chat_text;
+    kind = template.kind;
+    tool = template.tool;
+    args = { ...template.arguments };
+  } else if (typeof input.message === "string" && input.message.trim() !== "") {
+    chatText = input.message;
+    const parsed = await parseFreeText(input.message);
+    tool = parsed.tool;
+    args = parsed.arguments;
+    kind = tool ? "tool" : "no-tool";
+  } else {
+    throw new Error("chat requires template_id or a non-empty message");
+  }
+
+  // Display-only no-tool state: plain words, gateway never called.
+  if (kind === "no-tool" || tool === null) {
+    return buildTurn({
+      kind: "no-tool",
+      template_id: template?.id ?? null,
+      chat_text: chatText,
+      task_id: input.task_id ?? null,
+      tool: null,
+      arguments: {},
+      trace_url: input.task_id ? `/console/tasks/${input.task_id}` : null,
+      tools: { connected: toolsConnected },
+      no_tool_message: NO_TOOL_MESSAGE,
+    });
+  }
+
+  // Fresh task when the template demands one (e.g. the over-budget beat).
+  let taskId = input.task_id ?? null;
+  if (template?.task && !input.task_id) {
+    const [agent] = await db()
+      .select()
+      .from(agents)
+      .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, AGENT_KEY)));
+    if (!agent) throw new Error(`demo chat: ${AGENT_KEY} missing`);
+    const [task] = await db()
+      .insert(tasks)
+      .values({
+        tenantId: tenant.id,
+        agentId: agent.id,
+        title: template.task.title,
+        budgetUsdCents: template.task.budget_usd_cents,
+        status: "open",
+      })
+      .returning();
+    taskId = task.id;
+  }
+
+  if (tool.startsWith("treasury.")) {
+    await ensureTreasuryFixtures(tenant.id);
+  }
+
+  // Lifecycle scripts run the underlying call, then the scripted step through
+  // the real machinery (resolve route / consume path).
+  if (template?.lifecycle === "drain-reject") {
+    return runDrainReject({ chatText, template, tool, args, taskId, baseUrl, toolsConnected });
+  }
+  if (template?.lifecycle === "replay" || template?.lifecycle === "expired") {
+    return runCapabilityLifecycle({
+      chatText,
+      template,
+      tool,
+      args,
+      taskId,
+      baseUrl,
+      toolsConnected,
+      mode: template.lifecycle,
+    });
+  }
+
+  const data = await executeCall({ tool, args, taskId, baseUrl });
+  return hydrateTurn(
+    { template_id: template?.id ?? null, chat_text: chatText, task_id: taskId, tool, arguments: args },
+    data.data,
+    data.transport,
+    toolsConnected,
+  );
+}
+
+async function executeCall(input: {
+  tool: string;
+  args: Record<string, unknown>;
+  taskId: string | null;
+  baseUrl: string;
+}): Promise<{ data: ToolCallData; transport: "mcp" | "gateway" }> {
+  const sdkTool = MCP_GATEWAY_TO_SDK[input.tool];
+  if (sdkTool) {
+    const callArgs = { ...input.args };
+    if (input.taskId) callArgs.task_id = input.taskId;
+    const result = await callViaMcp(input.baseUrl, sdkTool, callArgs);
+    return { data: result.data, transport: "mcp" };
+  }
+  const result = await runToolCall({
+    ...(input.taskId ? { task_id: input.taskId } : {}),
+    agent_key: AGENT_KEY,
+    tool: input.tool,
+    arguments: input.args,
+  });
+  if (!result.ok) throw new Error(`gateway rejected ${input.tool}: ${result.error.message}`);
+  return { data: result.data, transport: "gateway" };
+}
+
+// $450k drain: escalate through the real pipeline, then the approver rejects
+// through the real resolve route — no capability, no execution, the rejection
+// on the record.
+async function runDrainReject(input: {
+  chatText: string;
+  template: ChatTemplate;
+  tool: string;
+  args: Record<string, unknown>;
+  taskId: string | null;
+  baseUrl: string;
+  toolsConnected: number | null;
+}): Promise<ChatTurn> {
+  const executed = await executeCall({ tool: input.tool, args: input.args, taskId: input.taskId, baseUrl: input.baseUrl });
+  if (executed.data.decision !== "escalate" || !executed.data.approval_id) {
+    throw new Error(`drain setup: expected escalate + approval, got ${executed.data.decision}`);
+  }
+  const { POST: resolvePOST } = await import("../../app/api/approvals/[id]/resolve/route");
+  const res = await resolvePOST(
+    new Request("http://chat.local/api/approvals/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome: "rejected", resolved_by: "demo-operator" }),
+    }),
+    { params: Promise.resolve({ id: executed.data.approval_id }) },
+  );
+  const body = (await res.json()) as { ok: boolean; data?: { approval_outcome: string } };
+  if (!body.ok || body.data?.approval_outcome !== "rejected") {
+    throw new Error(`drain reject failed: ${JSON.stringify(body)}`);
+  }
+  const turn = await hydrateTurn(
+    {
+      kind: "lifecycle",
+      template_id: input.template.id,
+      chat_text: input.chatText,
+      task_id: input.taskId,
+      tool: input.tool,
+      arguments: input.args,
+    },
+    executed.data,
+    executed.transport,
+    input.toolsConnected,
+  );
+  turn.approval_outcome = "rejected";
+  if (turn.approval) turn.approval.status = "rejected";
+  turn.lines.execution = "no capability, no execution — the approver rejected it";
+  return turn;
+}
+
+// Replay / expired: an allowed call issues a real capability — the pipeline
+// consumes it on the allow path — then the scripted step drives it through
+// the real consume path again: replay mode expects rejected/replay outright;
+// expired mode backdates the row first and expects rejected/expired (the
+// expiry check runs before the status check in the real verify code).
+async function runCapabilityLifecycle(input: {
+  chatText: string;
+  template: ChatTemplate;
+  tool: string;
+  args: Record<string, unknown>;
+  taskId: string | null;
+  baseUrl: string;
+  toolsConnected: number | null;
+  mode: "replay" | "expired";
+}): Promise<ChatTurn> {
+  const executed = await executeCall({ tool: input.tool, args: input.args, taskId: input.taskId, baseUrl: input.baseUrl });
+  if (!executed.data.capability) throw new Error(`${input.mode} setup: expected a capability`);
+  const cap = executed.data.capability;
+  if (input.mode === "expired") {
+    const { capabilities } = await import("../db/schema");
+    await db()
+      .update(capabilities)
+      .set({ expiresAt: new Date(Date.now() - 60_000).toISOString() })
+      .where(eq(capabilities.id, cap.capability_id));
+  }
+  const second = await consumeCapability(cap.capability_id, { action: cap.action, resource: cap.resource });
+  if (second.status !== "rejected" || second.reason !== input.mode) {
+    throw new Error(`expected rejected/${input.mode}, got ${JSON.stringify(second)}`);
+  }
+  const turn = await hydrateTurn(
+    {
+      kind: "lifecycle",
+      template_id: input.template.id,
+      chat_text: input.chatText,
+      task_id: input.taskId,
+      tool: input.tool,
+      arguments: input.args,
+    },
+    executed.data,
+    executed.transport,
+    input.toolsConnected,
+  );
+  turn.rejections = [{ step: input.mode, reason: second.reason, capability_id: cap.capability_id }];
+  turn.lines.execution = `capability ${input.mode === "replay" ? "replayed" : "expired"} → rejected (${second.reason})`;
+  return turn;
+}
