@@ -15,7 +15,7 @@ const fixture = {
   tenant: { slug: config().DEMO_TENANT_SLUG, name: "Cubic Demo" },
   agents: [{
     agent_key: "agent:8472", name: "deploy-agent", environment: "demo",
-    status: "active", erc8004_identity: null,
+    status: "active", erc8004_identity: "11155111:10250",
     declared_capabilities: ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"],
   }, {
     // plan-14: REAL low-reputation identity — Base Agent0 agent 8453:74108
@@ -26,6 +26,16 @@ const fixture = {
     agent_key: "agent:lab-1", name: "low-rep-research-agent", environment: "demo",
     status: "active", erc8004_identity: "8453:74108",
     declared_capabilities: ["github.get_pull_request"],
+  }, {
+    // Owned Sepolia identities (registered live; feedback 90–95, above the
+    // 0.80 floor — same decisions as the old static defaults).
+    agent_key: "agent:treasury", name: "treasury-agent", environment: "demo",
+    status: "active", erc8004_identity: "11155111:10251",
+    declared_capabilities: ["treasury.swap", "treasury.transfer", "treasury.stake", "task.complete"],
+  }, {
+    agent_key: "agent:reader", name: "reader-agent", environment: "demo",
+    status: "active", erc8004_identity: "11155111:10252",
+    declared_capabilities: ["github.get_pull_request", "github.read_file"],
   }],
   tools: [
     { name: "github.get_pull_request", category: "coding", default_risk_class: "low", executor: "github", executor_config: {} },

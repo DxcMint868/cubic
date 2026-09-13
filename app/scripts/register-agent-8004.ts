@@ -2,22 +2,24 @@
 // feedback, so the demo reads live testnet trust instead of a static number.
 //
 // Needs (testnet only — never mainnet keys here):
-//   OWNER_KEY   — throwaway Base Sepolia key, funded via any Base Sepolia
+//   AGENT_OWNER_KEY   — throwaway Base Sepolia key, funded via any Base Sepolia
 //                 faucet (it becomes the agent NFT owner)
-//   CLIENT_KEY  — OPTIONAL second throwaway key (feedback MUST come from a
+//   AGENT_CLIENT_KEY  — OPTIONAL second throwaway key (feedback MUST come from a
 //                 non-owner; omit it and the script prints the manual step)
-//   RPC_URL     — optional, defaults to public https://sepolia.base.org
+//   RPC_URL     — optional, defaults to public https://base-sepolia-rpc.publicnode.com
 //
 // Run: pnpm --filter app exec tsx scripts/register-agent-8004.ts
-// Prints: agentId, identity string (84532:<id>), Basescan links, QuickNode
+// (keys come from app/.env.local: AGENT_OWNER_KEY + optional AGENT_CLIENT_KEY)
+// Prints: agentId, identity string (84532:<id>), Etherscan links, QuickNode
 // agent page, and polls the Base Sepolia Agent0 subgraph until indexed.
 //
 // Contracts (Base Sepolia, ERC-8004 canonical deployments):
 //   Identity   0x8004a818bfb912233c491871b3d84c89a494bd9e
 //   Reputation 0x8004b663056a597dffe9eccc1965a193b7388713
+import "../src/server/load-env";
 import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
+import { sepolia as ethSepolia } from "viem/chains";
 
 const IDENTITY = "0x8004a818bfb912233c491871b3d84c89a494bd9e" as const;
 const REPUTATION = "0x8004b663056a597dffe9eccc1965a193b7388713" as const;
@@ -105,12 +107,12 @@ function dataUri(obj: unknown): string {
 }
 
 async function main(): Promise<void> {
-  const ownerKey = process.env.OWNER_KEY as `0x${string}` | undefined;
-  if (!ownerKey) throw new Error("set OWNER_KEY (throwaway Base Sepolia key, faucet-funded)");
-  const rpc = process.env.RPC_URL ?? "https://sepolia.base.org";
-  const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpc) });
+  const ownerKey = process.env.AGENT_OWNER_KEY as `0x${string}` | undefined;
+  if (!ownerKey) throw new Error("set AGENT_OWNER_KEY (throwaway Base Sepolia key, faucet-funded)");
+  const rpc = process.env.RPC_URL ?? "https://base-sepolia-rpc.publicnode.com";
+  const publicClient = createPublicClient({ chain: ethSepolia, transport: http(rpc) });
   const owner = privateKeyToAccount(ownerKey);
-  const wallet = createWalletClient({ account: owner, chain: baseSepolia, transport: http(rpc) });
+  const wallet = createWalletClient({ account: owner, chain: ethSepolia, transport: http(rpc) });
 
   console.log(`owner: ${owner.address}`);
   const balance = await publicClient.getBalance({ address: owner.address });
@@ -120,11 +122,11 @@ async function main(): Promise<void> {
   const uriFor = (entry: (typeof ROSTER)[number]) =>
     dataUri(registrationFileFor(entry.name, entry.description));
 
-  const clientKey = process.env.CLIENT_KEY as `0x${string}` | undefined;
+  const clientKey = process.env.AGENT_CLIENT_KEY as `0x${string}` | undefined;
   const client = clientKey ? privateKeyToAccount(clientKey) : null;
-  const clientWallet = client ? createWalletClient({ account: client, chain: baseSepolia, transport: http(rpc) }) : null;
+  const clientWallet = client ? createWalletClient({ account: client, chain: ethSepolia, transport: http(rpc) }) : null;
   if (client) console.log(`feedback client: ${client.address}`);
-  else console.log("No CLIENT_KEY — feedback steps print as manual instructions.");
+  else console.log("No AGENT_CLIENT_KEY — feedback steps print as manual instructions.");
 
   const identities: Array<{ key: string; agentId: bigint }> = [];
   for (const entry of ROSTER) {

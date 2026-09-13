@@ -87,7 +87,7 @@ describe("seed", () => {
     await seed();
     const afterDemo = await demoCounts();
 
-    expect(result1.agents).toBe(2); // plan-07: agent:8472 + agent:lab-1 (low-rep fixture)
+    expect(result1.agents).toBe(4); // agent:8472 + agent:lab-1 + agent:treasury + agent:reader
     expect(result1.tools).toBe(6);
     expect(result1.policies).toBe(3);
     expect(result1.tasks).toBe(1);
