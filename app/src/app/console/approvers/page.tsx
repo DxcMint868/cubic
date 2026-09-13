@@ -13,20 +13,21 @@ import {
   th,
 } from "@/components/ConsoleBits";
 import { deriveApprovers, fmtAge, shortId } from "@/components/console/derive";
-import { getAuditEvents, useApi } from "@/lib/api";
+import { getAuditEvents, getCouncils, useApi } from "@/lib/api";
 
 export default function ConsoleApprovers() {
   const { data, error, loading, reload } = useApi("console-approvers", () =>
     getAuditEvents({ limit: 200 }),
   );
-  const approvers = useMemo(() => deriveApprovers(data ?? []), [data]);
+  const { data: councils } = useApi("console-approvers-councils", () => getCouncils());
+  const approvers = useMemo(() => deriveApprovers(data ?? [], councils ?? []), [data, councils]);
 
   return (
     <div>
       <PageHead
         eyebrow="CONSOLE — APPROVERS"
         title="Humans who decide."
-        sub="No registry — approvers are whoever resolved approvals. A wallet signature is the authentication: signed resolutions verified on resolve and sealed into the event fingerprint; unsigned ones are the labeled dev stand-in."
+        sub="Council members are authorized to decide; the table also shows anyone who actually resolved. A wallet signature is the authentication: signed resolutions verified on resolve and sealed into the event fingerprint; unsigned ones are the labeled dev stand-in."
       />
 
       {loading && !data ? (
@@ -46,9 +47,9 @@ export default function ConsoleApprovers() {
         </div>
       ) : (
         <div style={{ marginTop: 28 }}>
-          <Panel title={`${approvers.length} APPROVERS — FROM APPROVAL EVENTS`}>
+          <Panel title={`${approvers.length} APPROVERS — COUNCILS + RESOLVERS`}>
             {approvers.length === 0 ? (
-              <EmptyState>No resolved approvals yet — escalate something and sign it.</EmptyState>
+              <EmptyState>No council members and no resolved approvals yet.</EmptyState>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
@@ -68,11 +69,16 @@ export default function ConsoleApprovers() {
                           <div style={{ fontSize: 13, fontWeight: 700, color: "#f4f4f4" }}>
                             {approver.address ? shortId(approver.address, 12) : approver.id}
                           </div>
-                          <div className="mono" style={{ marginTop: 4, fontSize: 10, color: "#5a5a5a" }}>
+                          <div className="mono" style={{ marginTop: 4, fontSize: 10, color: "#5a5a5a", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {approver.councils.map((c) => (
+                              <Tag key={c}>{c.toUpperCase()}</Tag>
+                            ))}
                             {approver.address ? (
                               <Tag>SIGNED WALLET</Tag>
-                            ) : (
+                            ) : approver.resolved > 0 ? (
                               <Tag>ATTRIBUTION STRING</Tag>
+                            ) : (
+                              <Tag>NOT YET RESOLVED</Tag>
                             )}
                           </div>
                         </td>

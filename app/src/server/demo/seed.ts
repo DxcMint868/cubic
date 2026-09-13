@@ -83,26 +83,45 @@ const fixture = {
   }],
 } as const;
 
-// Council roster (off-chain multisig; members are wallet addresses). Keyed off
-// the throwaway testnet keys when present — keyless environments seed empty
-// member lists (signed path closed, unsigned stand-in still resolves).
+// Council roster (off-chain multisig; members are wallet addresses).
+// APPROVER_PRIVATE_KEYS (comma-separated) is authoritative when set — it
+// replaces the throwaway testnet keys entirely, so one configured approver
+// means threshold 1, not a surprise 2-of-2. Without it, fall back to the
+// throwaway keys. Missing keys → empty member lists (signed path closed,
+// unsigned stand-in still resolves).
 function councilFixture(): Array<{ name: string; members: string[]; threshold: number; safe_address: null }> {
   const members: Record<string, string[]> = {};
   try {
-    const owner = process.env.AGENT_OWNER_KEY;
-    const client = process.env.AGENT_CLIENT_KEY;
-    const ownerAddr = owner ? privateKeyToAccount(owner as `0x${string}`).address : null;
-    const clientAddr = client ? privateKeyToAccount(client as `0x${string}`).address : null;
-    if (ownerAddr) {
-      members["deploy-council"] = [ownerAddr];
-      members["treasury-council"] = clientAddr ? [ownerAddr, clientAddr] : [ownerAddr];
+    const extra = (process.env.APPROVER_PRIVATE_KEYS ?? "")
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean)
+      .map((k) => privateKeyToAccount(k as `0x${string}`).address);
+    let all: string[];
+    if (extra.length) {
+      all = extra;
+    } else {
+      const owner = process.env.AGENT_OWNER_KEY;
+      const client = process.env.AGENT_CLIENT_KEY;
+      const ownerAddr = owner ? privateKeyToAccount(owner as `0x${string}`).address : null;
+      const clientAddr = client ? privateKeyToAccount(client as `0x${string}`).address : null;
+      all = [];
+      for (const a of [ownerAddr, clientAddr]) {
+        if (a && !all.some((x) => x.toLowerCase() === a.toLowerCase())) all.push(a);
+      }
+    }
+    if (all.length) {
+      members["deploy-council"] = [all[0]];
+      members["treasury-council"] = all.length >= 2 ? [all[0], all[1]] : [all[0]];
     }
   } catch {
     // no keys / no viem — councils seed empty (unsigned resolves unaffected)
   }
+  const treasury = members["treasury-council"] ?? [];
   return [
     { name: "deploy-council", members: members["deploy-council"] ?? [], threshold: 1, safe_address: null },
-    { name: "treasury-council", members: members["treasury-council"] ?? [], threshold: 2, safe_address: null },
+    // Threshold follows membership so a single configured approver can always finalize.
+    { name: "treasury-council", members: treasury, threshold: treasury.length >= 2 ? 2 : 1, safe_address: null },
   ];
 }
 

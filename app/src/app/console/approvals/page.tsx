@@ -324,8 +324,6 @@ export default function ConsoleApprovals() {
                         </Link>
                         <Link
                           href={`/api/anchors/verify?task_id=${approval.taskId}`}
-                          target="_blank"
-                          rel="noreferrer"
                           className="link"
                           style={{ fontSize: 10, letterSpacing: "0.12em" }}
                         >

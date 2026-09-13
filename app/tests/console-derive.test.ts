@@ -157,6 +157,14 @@ describe("deriveApprovers", () => {
     expect(rows[1].address).toBe("0xabc");
   });
 
+  it("seeds council members with 0/0 before they ever resolve", () => {
+    const rows = deriveApprovers([], [
+      { name: "treasury-council", members: ["0xAAA", "0xBBB"] },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: "0xaaa", resolved: 0, approved: 0, rejected: 0, councils: ["treasury-council"] });
+  });
+
   it("ignores non-completion events", () => {
     expect(deriveApprovers([
       event({ id: 1, event_type: "ledger.approval.requested", payload: {} }),

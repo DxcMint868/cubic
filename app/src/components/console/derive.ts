@@ -302,10 +302,11 @@ export function deriveApprovals(events: AuditEvent[]): {
   return { pending, resolved };
 }
 
-// Approvers are not a registry — they are whoever resolved approvals, derived
-// from ledger.approval.completed events. Identity = wallet signer when the
-// approval was signed, else the resolved_by attribution string. Signed vs
-// unsigned is the authentication story: signatures verify on resolve.
+// Approvers = council members (authorized to decide) + whoever actually
+// resolved approvals (from ledger.approval.completed events). A member who
+// never resolved shows 0/0 with their council tag; a non-member resolver
+// (e.g. unsigned dev stand-in) shows as attribution. Identity = wallet signer
+// when signed, else the resolved_by attribution string.
 export interface ApproverItem {
   id: string;
   address: string | null;
@@ -314,17 +315,36 @@ export interface ApproverItem {
   rejected: number;
   signed: number;
   lastAt: string | null;
+  councils: string[];
 }
 
-export function deriveApprovers(events: AuditEvent[]): ApproverItem[] {
+export function deriveApprovers(
+  events: AuditEvent[],
+  councilList: Array<{ name: string; members: string[] }> = [],
+): ApproverItem[] {
   const byId = new Map<string, ApproverItem>();
+  const ensure = (id: string, address: string | null): ApproverItem => {
+    let item = byId.get(id);
+    if (!item) {
+      item = { id, address, resolved: 0, approved: 0, rejected: 0, signed: 0, lastAt: null, councils: [] };
+      byId.set(id, item);
+    }
+    return item;
+  };
+  for (const c of councilList) {
+    for (const member of c.members) {
+      const item = ensure(member.toLowerCase(), member);
+      if (!item.councils.includes(c.name)) item.councils.push(c.name);
+    }
+  }
   const ordered = [...events].sort((a, b) => a.id - b.id);
   for (const event of ordered) {
     if (event.event_type !== "ledger.approval.completed") continue;
     const signer = asString(event.payload.signer);
     const resolvedBy = asString(event.payload.resolved_by);
     const id = signer ?? resolvedBy ?? "unknown";
-    const item = byId.get(id) ?? {
+    const key = signer ? signer.toLowerCase() : id;
+    const item = byId.get(key) ?? {
       id,
       address: signer,
       resolved: 0,
@@ -332,13 +352,14 @@ export function deriveApprovers(events: AuditEvent[]): ApproverItem[] {
       rejected: 0,
       signed: 0,
       lastAt: null as string | null,
+      councils: [] as string[],
     };
     item.resolved += 1;
     if (asString(event.payload.outcome) === "approved") item.approved += 1;
     else item.rejected += 1;
     if (signer) item.signed += 1;
     item.lastAt = event.created_at;
-    byId.set(id, item);
+    byId.set(key, item);
   }
   return [...byId.values()].sort(
     (a, b) => (parseTs(b.lastAt)?.getTime() ?? 0) - (parseTs(a.lastAt)?.getTime() ?? 0),
@@ -525,6 +546,9 @@ export function deriveCounters(events: AuditEvent[]): Counters {
   return counters;
 }
 
+// HCS topic-explorer link. Pure string build — the topic id rides on each
+// anchor object from the server (real-or-absent); "testnet" matches the demo's
+// HEDERA_NETWORK (see TraceView.hashscanUrl for the same assumption).
 export function eventSummary(event: AuditEvent): string {
   const payload = event.payload;
   switch (event.event_type) {
