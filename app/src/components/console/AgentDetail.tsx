@@ -141,7 +141,9 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
             {profile?.name ?? agentKey ?? shortId(agentId, 12)}
           </h1>
           <p className="mono" style={{ marginTop: 12, fontSize: 11, color: "#8a8a8a" }}>
-            {profile?.agent_key ?? agentKey ?? `AGENT ID ${agentId}`}
+            {profile?.erc8004_identity
+              ? `ERC-8004 ${profile.erc8004_identity}`
+              : (agentKey ?? `AGENT ID ${agentId}`)}
             {profile ? ` · ${profile.environment.toUpperCase()} · ${profile.status.toUpperCase()}` : ""}
           </p>
         </div>

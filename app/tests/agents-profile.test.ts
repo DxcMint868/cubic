@@ -192,10 +192,10 @@ describe("agent registry + profile API", () => {
     expect(body.ok).toBe(true);
     expect(body.data.agent_key).toBe("agent:8472");
     expect(body.data.name).toBe("deploy-agent");
-    expect(body.data.erc8004_identity).toBe("11155111:10250");
+    expect(body.data.erc8004_identity).toBe("84532:9223");
     // Source depends on live graph config (static hermetic / live / fallback);
     // shape + identity echo are the contract here.
-    expect(body.data.reputation.identity).toBe("11155111:10250");
+    expect(body.data.reputation.identity).toBe("84532:9223");
     expect(["agent0-subgraph", "offline-fallback", "static"]).toContain(body.data.reputation.source);
     expect(body.data.reputation.score).toBeGreaterThanOrEqual(0);
     expect(body.data.reputation.score).toBeLessThanOrEqual(1);

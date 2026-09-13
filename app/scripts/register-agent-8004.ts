@@ -6,7 +6,7 @@
 //                 faucet (it becomes the agent NFT owner)
 //   AGENT_CLIENT_KEY  — OPTIONAL second throwaway key (feedback MUST come from a
 //                 non-owner; omit it and the script prints the manual step)
-//   RPC_URL     — optional, defaults to public https://base-sepolia-rpc.publicnode.com
+//   RPC_URL     — optional, defaults to public https://sepolia.base.org
 //
 // Run: pnpm --filter app exec tsx scripts/register-agent-8004.ts
 // (keys come from app/.env.local: AGENT_OWNER_KEY + optional AGENT_CLIENT_KEY)
@@ -19,7 +19,7 @@
 import "../src/server/load-env";
 import { createPublicClient, createWalletClient, http, parseEventLogs } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { sepolia as ethSepolia } from "viem/chains";
+import { baseSepolia } from "viem/chains";
 
 const IDENTITY = "0x8004a818bfb912233c491871b3d84c89a494bd9e" as const;
 const REPUTATION = "0x8004b663056a597dffe9eccc1965a193b7388713" as const;
@@ -78,7 +78,7 @@ const registrationFileFor = (name: string, description: string) => ({
 // source of the number changes (hardcoded → onchain). agent:lab-1 is NOT here:
 // it borrows live mainnet 8453:74108 (real negative feedback) for the
 // escalation beat.
-const ROSTER: Array<{ key: string; name: string; description: string; feedback: number }> = [
+const ROSTER: Array<{ key: string; name: string; description: string; feedback: number; existingId?: bigint }> = [
   {
     key: "agent:8472",
     name: "Cubic deploy-agent",
@@ -109,10 +109,10 @@ function dataUri(obj: unknown): string {
 async function main(): Promise<void> {
   const ownerKey = process.env.AGENT_OWNER_KEY as `0x${string}` | undefined;
   if (!ownerKey) throw new Error("set AGENT_OWNER_KEY (throwaway Base Sepolia key, faucet-funded)");
-  const rpc = process.env.RPC_URL ?? "https://base-sepolia-rpc.publicnode.com";
-  const publicClient = createPublicClient({ chain: ethSepolia, transport: http(rpc) });
+  const rpc = process.env.RPC_URL ?? "https://sepolia.base.org";
+  const publicClient = createPublicClient({ chain: baseSepolia, transport: http(rpc) });
   const owner = privateKeyToAccount(ownerKey);
-  const wallet = createWalletClient({ account: owner, chain: ethSepolia, transport: http(rpc) });
+  const wallet = createWalletClient({ account: owner, chain: baseSepolia, transport: http(rpc) });
 
   console.log(`owner: ${owner.address}`);
   const balance = await publicClient.getBalance({ address: owner.address });
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
 
   const clientKey = process.env.AGENT_CLIENT_KEY as `0x${string}` | undefined;
   const client = clientKey ? privateKeyToAccount(clientKey) : null;
-  const clientWallet = client ? createWalletClient({ account: client, chain: ethSepolia, transport: http(rpc) }) : null;
+  const clientWallet = client ? createWalletClient({ account: client, chain: baseSepolia, transport: http(rpc) }) : null;
   if (client) console.log(`feedback client: ${client.address}`);
   else console.log("No AGENT_CLIENT_KEY — feedback steps print as manual instructions.");
 
@@ -147,6 +147,9 @@ async function main(): Promise<void> {
 
     if (clientWallet && client) {
       console.log(`  leaving feedback (${entry.feedback}/100) from ${client.address}…`);
+      // Reputation registry rate-limits feedback from one client (~1/min):
+      // space submissions out instead of machine-gunning the contract.
+      await new Promise((r) => setTimeout(r, 75_000));
       const fhash = await clientWallet.writeContract({
         address: REPUTATION,
         abi: reputationAbi,

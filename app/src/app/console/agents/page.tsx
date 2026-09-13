@@ -89,9 +89,6 @@ export default function ConsoleAgents() {
                         <div style={{ fontSize: 13, fontWeight: 700, color: "#f4f4f4" }}>
                           {byId.get(agent.agentId)?.name ?? shortId(agent.agentId, 12)}
                         </div>
-                        <div className="mono" style={{ marginTop: 4, fontSize: 10, color: "#5a5a5a" }}>
-                          {byId.get(agent.agentId)?.agent_key ?? `id ${shortId(agent.agentId, 12)}`}
-                        </div>
                       </td>
                       <td style={td}>{agent.taskIds.length}</td>
                       <td style={td}>{agent.intents}</td>
