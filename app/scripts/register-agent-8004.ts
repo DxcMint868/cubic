@@ -61,16 +61,44 @@ const reputationAbi = [
   },
 ] as const;
 
-const registrationFile = {
+const registrationFileFor = (name: string, description: string) => ({
   type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-  name: "Cubic deploy-agent",
-  description:
-    "Demo agent for Cubic, the agent authorization gateway. Reads PRs, runs paid security scans, and escalates merges and deploys to a human approver. Used live on camera for the hackathon demo.",
+  name,
+  description,
   services: [],
   x402Support: false,
   active: true,
   supportedTrust: ["reputation"],
-};
+});
+
+// The owned testnet roster. Scores stay at/above the 0.80 reputation floor so
+// pipeline decisions are identical to today's static defaults — only the
+// source of the number changes (hardcoded → onchain). agent:lab-1 is NOT here:
+// it borrows live mainnet 8453:74108 (real negative feedback) for the
+// escalation beat.
+const ROSTER: Array<{ key: string; name: string; description: string; feedback: number }> = [
+  {
+    key: "agent:8472",
+    name: "Cubic deploy-agent",
+    description:
+      "Demo agent for Cubic, the agent authorization gateway. Reads PRs, runs paid security scans, and escalates merges and deploys to a human approver. Used live on camera for the hackathon demo.",
+    feedback: 95,
+  },
+  {
+    key: "agent:treasury",
+    name: "Cubic treasury-agent",
+    description:
+      "Capital-management demo agent for Cubic. Rebalances the treasury (swaps), pays payroll (transfers), and stakes — every high-risk move escalated to a human approver first.",
+    feedback: 90,
+  },
+  {
+    key: "agent:reader",
+    name: "Cubic reader-agent",
+    description:
+      "Least-privilege demo agent for Cubic. Granted pull-request and file reads only — the standing example that capabilities are granted, not assumed.",
+    feedback: 92,
+  },
+];
 
 function dataUri(obj: unknown): string {
   return `data:application/json;base64,${Buffer.from(JSON.stringify(obj)).toString("base64")}`;
@@ -89,45 +117,54 @@ async function main(): Promise<void> {
   console.log(`balance: ${balance} wei`);
   if (balance === BigInt(0)) throw new Error("owner has no Base Sepolia ETH — fund it from a faucet first");
 
-  const uri = dataUri(registrationFile);
-  console.log("registering deploy-agent (fully on-chain metadata, no IPFS)…");
-  const hash = await wallet.writeContract({
-    address: IDENTITY,
-    abi: identityAbi,
-    functionName: "register",
-    args: [uri],
-  });
-  const receipt = await publicClient.waitForTransactionReceipt({ hash });
-  const logs = parseEventLogs({ abi: identityAbi, logs: receipt.logs, eventName: "Registered" });
-  const agentId = logs[0]?.args.agentId;
-  if (agentId == null) throw new Error("Registered event not found in receipt");
-  console.log(`registered agent #${agentId}`);
-  console.log(`identity string for seed: 84532:${agentId}`);
-  console.log(`basescan: https://sepolia.basescan.org/token/${IDENTITY}?a=${agentId}`);
-  console.log(`agent page: https://erc-8004.quicknode.com/agents/base-sepolia/${agentId}`);
+  const uriFor = (entry: (typeof ROSTER)[number]) =>
+    dataUri(registrationFileFor(entry.name, entry.description));
 
   const clientKey = process.env.CLIENT_KEY as `0x${string}` | undefined;
-  if (!clientKey) {
-    console.log("\nNo CLIENT_KEY — leave feedback manually from a NON-owner wallet:");
-    console.log(`  Reputation.write.giveFeedback(${agentId}, 95, 0, "demo", "deployment", "", "", 0x${"00".repeat(32)})`);
-    console.log(`  contract: https://sepolia.basescan.org/address/${REPUTATION}#writeContract`);
-  } else {
-    const client = privateKeyToAccount(clientKey);
-    const clientWallet = createWalletClient({ account: client, chain: baseSepolia, transport: http(rpc) });
-    console.log(`\nleaving feedback from ${client.address}…`);
-    const fhash = await clientWallet.writeContract({
-      address: REPUTATION,
-      abi: reputationAbi,
-      functionName: "giveFeedback",
-      args: [agentId, BigInt(95), 0, "demo", "deployment", "", "", `0x${"00".repeat(32)}`],
+  const client = clientKey ? privateKeyToAccount(clientKey) : null;
+  const clientWallet = client ? createWalletClient({ account: client, chain: baseSepolia, transport: http(rpc) }) : null;
+  if (client) console.log(`feedback client: ${client.address}`);
+  else console.log("No CLIENT_KEY — feedback steps print as manual instructions.");
+
+  const identities: Array<{ key: string; agentId: bigint }> = [];
+  for (const entry of ROSTER) {
+    console.log(`\nregistering ${entry.key} (${entry.name})…`);
+    const hash = await wallet.writeContract({
+      address: IDENTITY,
+      abi: identityAbi,
+      functionName: "register",
+      args: [uriFor(entry)],
     });
-    await publicClient.waitForTransactionReceipt({ hash: fhash });
-    console.log(`feedback tx: https://sepolia.basescan.org/tx/${fhash}`);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    const logs = parseEventLogs({ abi: identityAbi, logs: receipt.logs, eventName: "Registered" });
+    const agentId = logs[0]?.args.agentId;
+    if (agentId == null) throw new Error(`Registered event not found for ${entry.key}`);
+    console.log(`  agent #${agentId} — https://sepolia.basescan.org/token/${IDENTITY}?a=${agentId}`);
+    console.log(`  agent page: https://erc-8004.quicknode.com/agents/base-sepolia/${agentId}`);
+    identities.push({ key: entry.key, agentId });
+
+    if (clientWallet && client) {
+      console.log(`  leaving feedback (${entry.feedback}/100) from ${client.address}…`);
+      const fhash = await clientWallet.writeContract({
+        address: REPUTATION,
+        abi: reputationAbi,
+        functionName: "giveFeedback",
+        args: [agentId, BigInt(entry.feedback), 0, "demo", "deployment", "", "", `0x${"00".repeat(32)}`],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: fhash });
+      console.log(`  feedback tx: https://sepolia.basescan.org/tx/${fhash}`);
+    } else {
+      console.log(`  MANUAL feedback from a NON-owner wallet:`);
+      console.log(`    Reputation.write.giveFeedback(${agentId}, ${entry.feedback}, 0, "demo", "deployment", "", "", 0x${"00".repeat(32)})`);
+      console.log(`    contract: https://sepolia.basescan.org/address/${REPUTATION}#writeContract`);
+    }
   }
 
+  console.log("\nidentities for seed (erc8004_identity):");
+  for (const { key, agentId } of identities) console.log(`  ${key} → 84532:${agentId}`);
   console.log(`\nsubgraph endpoint template:\n${SUBGRAPH}`);
-  console.log("Next: set AGENT0_SUBGRAPH_URL to the Base Sepolia endpoint, pin");
-  console.log(`84532:${agentId} as deploy-agent erc8004_identity in seed, reseed, done.`);
+  console.log("Next: set AGENT0_SUBGRAPH_URL to the Base Sepolia endpoint, pin the");
+  console.log("identities above in seed, reseed, done.");
 }
 
 main()
