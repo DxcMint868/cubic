@@ -614,6 +614,20 @@ async function executeCall(input: {
   baseUrl: string;
   agentKey: string;
 }): Promise<{ data: ToolCallData; transport: "mcp" | "gateway" }> {
+  // Paid-scan purchase: the discovery origin MUST ride on the call for the
+  // orchestrator's purchase branch (settle + execute) to engage — the MCP
+  // facade cannot carry it, so purchases go direct to the gateway.
+  if (input.tool === "scanner.scan" && input.args.purchase === true) {
+    const result = await runToolCall({
+      ...(input.taskId ? { task_id: input.taskId } : {}),
+      agent_key: input.agentKey,
+      tool: input.tool,
+      arguments: input.args,
+      origin: "payment_discovery",
+    } as never);
+    if (!result.ok) throw new Error(`gateway rejected ${input.tool}: ${result.error.message}`);
+    return { data: result.data, transport: "gateway" };
+  }
   const sdkTool = MCP_GATEWAY_TO_SDK[input.tool];
   if (sdkTool) {
     const callArgs = { ...input.args };
