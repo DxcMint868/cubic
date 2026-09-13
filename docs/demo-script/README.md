@@ -26,8 +26,13 @@ pipeline, identities, payments, and anchoring are real.
 
 ## Recording order (do it in this order, not edit order)
 
-1. Pre-flight: reseed, top up operator HBAR, confirm `HCS_TOPIC_ID`,
-   `OPENROUTER_API_KEY`, `APPROVER_PRIVATE_KEYS`, wallet connected in browser.
+1. Pre-flight: reseed, then POPULATE the audit log (Overview + Agents tabs
+   render from audit events — a fresh reseed shows them empty):
+   fire 3–4 chat turns (curl -X POST localhost:3000/api/demo/chat
+   -d '{"template_id":"deploy-read"}' etc.) or one full `pnpm --filter app
+   demo` if you want a settled payment in the data. Then top up operator
+   HBAR, confirm `HCS_TOPIC_ID`, `OPENROUTER_API_KEY`,
+   `APPROVER_PRIVATE_KEYS`, wallet connected in browser.
 2. Make the A2 title card first (a plain PNG/slide, monochrome) so the edit
    has it ready.
 3. Footage C, D, F (chat takes) — several takes each, keep the best. D
