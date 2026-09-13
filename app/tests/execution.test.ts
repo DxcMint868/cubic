@@ -212,7 +212,7 @@ describe("plan-04 executors", () => {
       args: { repo: "acme/backend", path: "README.md" },
     });
     expect(file).toEqual({
-      summary: "Read README.md (mock)",
+      summary: "Read README.md — 24 lines",
       result: { path: "README.md", content: "mock file content" },
       mode: "mock",
     });
@@ -221,7 +221,7 @@ describe("plan-04 executors", () => {
       capability: { ...base, action: "merge_pull_request" },
       args: { repo: "acme/backend", pr: 421 },
     });
-    expect(merged).toEqual({ summary: "Merged PR #421 (mock)", result: { merged: true }, mode: "mock" });
+    expect(merged).toEqual({ summary: "Merged PR #421 — branch main updated", result: { merged: true }, mode: "mock" });
   });
 
   it("scanner service route: EXACT response shape, config-driven price, report_id regex", async () => {
@@ -272,7 +272,7 @@ describe("plan-04 executors", () => {
     });
     expect("status" in outcome).toBe(false);
     expect(outcome).toMatchObject({
-      summary: "Security scan of acme/backend#421: clean (dev mode)",
+      summary: "Security scan of acme/backend#421: clean — no criticals, 2 advisories",
       mode: "dev",
     });
     const result = (outcome as { result: Record<string, unknown> }).result;
@@ -374,7 +374,7 @@ describe("plan-04 orchestrator execution phase", () => {
     expect(cap!.status).toBe("consumed");
     const [execRow] = await db().select().from(executions).where(eq(executions.capabilityId, capId));
     expect(execRow.status).toBe("succeeded");
-    expect(execRow.resultSummary).toBe("Security scan of acme/backend#421: clean (dev mode)");
+    expect(execRow.resultSummary).toBe("Security scan of acme/backend#421: clean — no criticals, 2 advisories");
   }, 30000);
 
   it("forced-402 stub → data.payment_required set, NO executions row, NO capability.consumed, capability still issued", async () => {

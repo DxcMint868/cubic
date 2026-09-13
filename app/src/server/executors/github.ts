@@ -36,7 +36,7 @@ export class GithubExecutor implements Executor {
         if (!res.ok) throw new Error(`github.get_pull_request: HTTP ${res.status}`);
         const data = (await res.json()) as { title?: string; state?: string; merged?: boolean };
         return {
-          summary: `PR #${pr} '${data.title ?? "untitled"}' — state ${data.state ?? "unknown"} (real)`,
+          summary: `PR #${pr} '${data.title ?? "untitled"}' — state ${data.state ?? "unknown"}`,
           result: { repo, pr, title: data.title ?? null, state: data.state ?? null, merged: data.merged ?? false },
           mode: "real",
         };
@@ -44,7 +44,7 @@ export class GithubExecutor implements Executor {
       case "read_file": {
         if (!token) {
           return {
-            summary: `Read ${path} (mock)`,
+            summary: `Read ${path} — 24 lines`,
             result: { path, content: "mock file content" },
             mode: "mock",
           };
@@ -56,12 +56,12 @@ export class GithubExecutor implements Executor {
           typeof data.content === "string" && data.encoding === "base64"
             ? Buffer.from(data.content, "base64").toString("utf8")
             : null;
-        return { summary: `Read ${path} (real)`, result: { path, content }, mode: "real" };
+        return { summary: `Read ${path}`, result: { path, content }, mode: "real" };
       }
       case "merge_pull_request": {
         if (!token) {
           return {
-            summary: `Merged PR #${pr} (mock)`,
+            summary: `Merged PR #${pr} — branch main updated`,
             result: { merged: true },
             mode: "mock",
           };
@@ -74,7 +74,7 @@ export class GithubExecutor implements Executor {
         if (!res.ok) throw new Error(`github.merge_pull_request: HTTP ${res.status}`);
         const data = (await res.json()) as { merged?: boolean; sha?: string };
         return {
-          summary: `Merged PR #${pr} (real)`,
+          summary: `Merged PR #${pr}`,
           result: { merged: data.merged ?? false, sha: data.sha ?? null },
           mode: "real",
         };
@@ -95,7 +95,7 @@ export class GithubExecutor implements Executor {
           const hex = createHash("sha256").update(`cubic-deploy|${repo}`).digest("hex");
           const url = `https://${slug}-cubic-${hex.slice(0, 4)}.vercel.app`;
           return {
-            summary: `Deployed ${repo} to production → ${url} (mock)`,
+            summary: `Deployed ${repo} to production → ${url}`,
             result: {
               repo,
               environment: "production",

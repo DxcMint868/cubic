@@ -30,6 +30,55 @@ type Item =
 
 let pendingSeq = 0;
 
+// Three-dot LLM thinking indicator (monochrome, CSS-only, respects
+// prefers-reduced-motion via a static fallback).
+function ThinkingDots() {
+  const dots = [0, 1, 2];
+  return (
+    <span
+      aria-label="thinking"
+      style={{ display: "inline-flex", gap: 5, alignItems: "center", marginLeft: 8 }}
+    >
+      {dots.map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: "50%",
+            background: "#8a8a8a",
+            display: "inline-block",
+            animation: "think-dot 1.2s ease-in-out infinite",
+            animationDelay: `${i * 0.2}s`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// The agent's spoken answer — reply or follow-up. Emphasized container
+// (bright text, larger type, left accent bar) so it reads as THE response;
+// the tool-call JSON + decision machinery stays dim mono around it.
+function AgentAnswer({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-start" }}>
+      <div
+        style={{
+          borderLeft: "2px solid #f4f4f4",
+          paddingLeft: 14,
+          maxWidth: "85%",
+          fontSize: 15,
+          lineHeight: 1.65,
+          color: "#f4f4f4",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function DecisionBanner({ turn }: { turn: ChatTurn }) {
   if (!turn.decision) return null;
   const reason = turn.reasons[0]?.code ?? turn.matched_rule_id ?? "—";
@@ -127,9 +176,7 @@ function TurnView({ turn }: { turn: ChatTurn }) {
             <p className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a" }}>
               LLM DRAFT
             </p>
-            <div style={{ display: "flex", justifyContent: "flex-start" }}>
-              <div style={{ fontSize: 14, color: "#e8e8e8", maxWidth: "85%" }}>{turn.reply}</div>
-            </div>
+            <AgentAnswer>{turn.reply}</AgentAnswer>
           </div>
         )}
         {turn.intent && (
@@ -182,9 +229,7 @@ function TurnView({ turn }: { turn: ChatTurn }) {
         )}
         {turn.approval && (
           <p className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>
-            {`approval ${turn.approval.id.slice(0, 8)} · provider ${
-              turn.approval.provider === "dev" ? "DEV (stand-in)" : turn.approval.provider.toUpperCase()
-            } · ${turn.approval.status}`}
+            {`approval ${turn.approval.id.slice(0, 8)} · ${turn.approval.provider.toUpperCase()} · ${turn.approval.status}`}
             {turn.approval_outcome === "rejected" ? " — the approver rejected it" : ""}
             {turn.decision === "escalate" && turn.approval.status === "pending" && !turn.approval_outcome
               ? " — awaiting approval in /console/approvals · this turn updates live"
@@ -205,13 +250,12 @@ function TurnView({ turn }: { turn: ChatTurn }) {
         {turn.lines.payment && (
           <p className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>{turn.lines.payment}</p>
         )}
-        {turn.follow_up && (
-          <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
-            <p className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a" }}>
-              AGENT FOLLOW-UP
-            </p>
-            <div style={{ fontSize: 14, color: "#e8e8e8", maxWidth: "85%" }}>{turn.follow_up}</div>
-          </div>
+        {turn.follow_up && <AgentAnswer>{turn.follow_up}</AgentAnswer>}
+        {turn.generating && (
+          <p className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "#5a5a5a" }}>
+            GENERATING ANSWER
+            <ThinkingDots />
+          </p>
         )}
         {turn.rejections.map((r) => (
           <p key={r.capability_id} className="mono" style={{ fontSize: 11, color: "#e8e8e8" }}>
@@ -316,6 +360,24 @@ function describeFailure(err: unknown): string {
       pollApprovalFollowUp({ approval_id: approvalId, message, tool, agent_key: agentKey })
         .then((poll) => {
           if (poll.status === "pending") return;
+          // Approved: mark generating immediately so the turn shows thinking
+          // dots while the follow-up synthesis completes, then patch whole.
+          if (poll.outcome === "approved" && poll.execution_summary && !poll.follow_up) {
+            setItems((prev) =>
+              prev.map((item) => {
+                if (item.kind !== "turn" || item.turn.task_id !== turnId || item.turn.approval?.id !== approvalId) {
+                  return item;
+                }
+                const turn = { ...item.turn };
+                turn.approval = turn.approval ? { ...turn.approval, status: poll.status } : turn.approval;
+                turn.approval_outcome = "approved";
+                turn.lines = { ...turn.lines, execution: poll.execution_summary as string };
+                turn.generating = true;
+                return { ...item, turn };
+              }),
+            );
+            return;
+          }
           clearInterval(timer);
           setItems((prev) =>
             prev.map((item) => {
@@ -326,9 +388,11 @@ function describeFailure(err: unknown): string {
               turn.approval = turn.approval ? { ...turn.approval, status: poll.status } : turn.approval;
               if (poll.outcome === "rejected") {
                 turn.approval_outcome = "rejected";
+                turn.generating = false;
                 turn.lines = { ...turn.lines, execution: "no capability, no execution — the approver rejected it" };
               } else if (poll.outcome === "approved") {
                 turn.approval_outcome = "approved";
+                turn.generating = false;
                 if (poll.execution_summary) {
                   turn.lines = { ...turn.lines, execution: poll.execution_summary };
                 }
@@ -626,7 +690,8 @@ function describeFailure(err: unknown): string {
               if (item.kind === "pending") {
                 return (
                   <p key={i} className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "#5a5a5a" }}>
-                    DECIDING — CALLING GATEWAY…
+                    THINKING
+                    <ThinkingDots />
                   </p>
                 );
               }

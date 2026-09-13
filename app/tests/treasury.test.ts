@@ -202,7 +202,7 @@ describe("plan-11 treasury branch", () => {
     expect(body.ok).toBe(true);
     expect(body.data.capability).toMatchObject({ action: "treasury_swap", resource: "treasury/USDC/ETH" });
     expect(body.data.execution?.status).toBe("succeeded");
-    expect(body.data.execution?.result_summary).toContain("(dev mode)");
+    expect(body.data.execution?.result_summary).toContain("uniswap-v3");
   }, 30000);
 
   it("payroll transfer takes the same escalate → approve → execute path", async () => {

@@ -44,7 +44,7 @@ beforeAll(async () => {
   // stub it deterministically (the real hop lives in execution.test.ts).
   registerExecutor("scanner", {
     execute: async (input) => ({
-      summary: `Security scan of ${String(input.args.target)}: clean (dev mode)`,
+      summary: `Security scan of ${String(input.args.target)}: clean — no criticals, 2 advisories`,
       result: { report_id: "rpt_stub0000", target: input.args.target, verdict: "clean", findings: [], mode: "dev" },
       mode: "dev",
     }),

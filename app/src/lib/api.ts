@@ -415,6 +415,8 @@ export interface ChatTurn {
   client_label: string;
   reply: string | null;
   follow_up: string | null;
+  /** Client-only: follow-up synthesis in flight (post-approval generating state). */
+  generating?: boolean;
   task_id: string | null;
   tool: string | null;
   arguments: Record<string, unknown>;

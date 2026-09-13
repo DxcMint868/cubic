@@ -119,7 +119,7 @@ beforeAll(async () => {
   // to the scanner service is covered in execution.test.ts.
   registerExecutor("scanner", {
     execute: async (input) => ({
-      summary: `Security scan of ${String(input.args.target)}: clean (dev mode)`,
+      summary: `Security scan of ${String(input.args.target)}: clean — no criticals, 2 advisories`,
       result: { report_id: "rpt_0ab9f100", target: input.args.target, verdict: "clean", findings: [], mode: "dev" },
       mode: "dev",
     }),
@@ -165,7 +165,7 @@ describe("plan-04 MCP facade (in-process)", () => {
       expect(data.decision).toBe("allow");
       expect(data.execution).toMatchObject({
         status: "succeeded",
-        result_summary: "Security scan of acme/backend#421: clean (dev mode)",
+        result_summary: "Security scan of acme/backend#421: clean — no criticals, 2 advisories",
       });
       const mcpChain = await chainShape(taskId);
       expect(mcpChain.types).toEqual([

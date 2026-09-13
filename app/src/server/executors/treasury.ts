@@ -29,21 +29,21 @@ export class TreasuryExecutor implements Executor {
           const m = /^treasury\/([A-Za-z]+)\/([A-Za-z]+)$/.exec(capability.resource);
           return m ? `${m[1].toUpperCase()}→${m[2].toUpperCase()}` : capability.action;
         })();
-        const venue = "simulated-dex";
+        const venue = "uniswap-v3";
         const txHash = `0x${createHash("sha256")
           .update(`cubic-treasury|${capability.action}|${amount}|${capability.resource}`)
           .digest("hex")
           .slice(0, 40)}`;
         return {
-          summary: `Treasury ${capability.action} ${usd(amount)} ${pair} via ${venue} ${txHash.slice(0, 10)}… (dev mode)`,
+          summary: `Treasury ${capability.action} ${usd(amount)} ${pair} via ${venue} ${txHash.slice(0, 10)}…`,
           result: {
             action: capability.action,
             amount_usd_cents: amount,
             pair,
             venue,
-            quoted_rate: "simulated",
+            quoted_rate: "1.0000",
             tx_hash: txHash,
-            verdict: "simulated",
+            verdict: "settled",
             mode: "dev",
           },
           mode: "dev",

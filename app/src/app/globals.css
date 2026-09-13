@@ -31,6 +31,17 @@ body {
   }
 }
 
+@keyframes think-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
 .mono {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
