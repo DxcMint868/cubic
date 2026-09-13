@@ -394,12 +394,17 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
       // is never described as hardware security.
       const approvalProvider =
         config().LEDGER_PROVIDER === "ledger" ? ledgerApprovalProvider() : getApprovalProvider();
+      // Council routing: the matched rule names the required council (if any).
+      // Unsigned dev resolves bypass councils (labeled stand-in); signed
+      // resolutions enforce the threshold — see the resolve route.
+      const matchedRule = policyDoc.rules.find((rule) => rule.id === result.matched_rule_id);
       const { approval_id } = await approvalProvider.request({
         decision_id: decisionRow.id,
         action: normalized.action,
         resource: normalized.resource,
         risk_class: normalized.risk_class,
         reason_codes: result.reasons.map((r) => r.code),
+        council: matchedRule?.council ?? null,
       });
       data.approval_id = approval_id;
       await emit(
@@ -413,6 +418,7 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
             decision_id: decisionRow.id,
             approval_id,
             reason_codes: result.reasons.map((r) => r.code),
+            ...(matchedRule?.council ? { council: matchedRule.council } : {}),
           },
         },
         meta,
@@ -429,6 +435,7 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
             provider: config().LEDGER_PROVIDER,
             action: normalized.action,
             resource: normalized.resource,
+            ...(matchedRule?.council ? { council: matchedRule.council } : {}),
           },
         },
         meta,

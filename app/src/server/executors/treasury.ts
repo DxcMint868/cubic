@@ -1,8 +1,10 @@
 // plan-11 treasury executor — dev-mode, explicitly labeled. No funds move:
-// every action returns a deterministic simulated receipt. The authorization
-// chain around it (normalize → policy → escalate/approve → capability →
-// execution) is the real, tested behavior — same honesty framing as the
-// plan-10 mock-always deploy case.
+// every action returns a deterministic simulated receipt shaped like a DEX
+// quote ticket (venue, pair, tx hash) so it reads real on camera without
+// touching money. The authorization chain around it (normalize → policy →
+// escalate/approve → capability → execution) is the real, tested behavior —
+// same honesty framing as the plan-10 mock-always deploy case.
+import { createHash } from "node:crypto";
 import type { Executor, ExecutorResult } from "./registry";
 
 function usd(cents: number): string {
@@ -22,12 +24,31 @@ export class TreasuryExecutor implements Executor {
     switch (capability.action) {
       case "treasury_swap":
       case "treasury_transfer":
-      case "treasury_stake":
+      case "treasury_stake": {
+        const pair = (() => {
+          const m = /^treasury\/([A-Za-z]+)\/([A-Za-z]+)$/.exec(capability.resource);
+          return m ? `${m[1].toUpperCase()}→${m[2].toUpperCase()}` : capability.action;
+        })();
+        const venue = "simulated-dex";
+        const txHash = `0x${createHash("sha256")
+          .update(`cubic-treasury|${capability.action}|${amount}|${capability.resource}`)
+          .digest("hex")
+          .slice(0, 40)}`;
         return {
-          summary: `Treasury ${capability.action} ${usd(amount)} (dev mode)`,
-          result: { action: capability.action, amount_usd_cents: amount, verdict: "simulated", mode: "dev" },
+          summary: `Treasury ${capability.action} ${usd(amount)} ${pair} via ${venue} ${txHash.slice(0, 10)}… (dev mode)`,
+          result: {
+            action: capability.action,
+            amount_usd_cents: amount,
+            pair,
+            venue,
+            quoted_rate: "simulated",
+            tx_hash: txHash,
+            verdict: "simulated",
+            mode: "dev",
+          },
           mode: "dev",
         };
+      }
       default:
         throw new Error(`treasury executor: unsupported action ${capability.action}`);
     }

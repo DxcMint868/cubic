@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { db } from "../src/server/db/client";
 import {
-  agents, auditEvents, capabilities, decisions, executions, intents,
+  agents, auditEvents, capabilities, councils, decisions, executions, intents,
   networkEvents, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
@@ -75,6 +75,7 @@ async function wipe() {
   await db().delete(agents).where(eq(agents.tenantId, tenantId));
   await db().delete(tools).where(eq(tools.tenantId, tenantId));
   await db().delete(policies).where(eq(policies.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonymFor(AGENT_KEY)));
 }

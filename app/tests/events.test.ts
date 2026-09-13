@@ -2,7 +2,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { eq, count } from "drizzle-orm";
 import { db } from "../src/server/db/client";
-import { tenants, auditEvents } from "../src/server/db/schema";
+import { tenants, auditEvents, councils } from "../src/server/db/schema";
 import { emit } from "../src/server/events/bus";
 import { emitInput, eventTypes } from "../src/server/events/types";
 
@@ -43,6 +43,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db().delete(auditEvents).where(eq(auditEvents.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
 });
 

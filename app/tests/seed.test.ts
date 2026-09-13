@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { eq, count } from "drizzle-orm";
 import { db } from "../src/server/db/client";
-import { tenants, agents, tasks, auditEvents, networkEvents } from "../src/server/db/schema";
+import { tenants, agents, tasks, auditEvents, networkEvents, councils } from "../src/server/db/schema";
 import { seed } from "../src/server/demo/seed";
 
 const pseudonym = (agentKey: string) =>
@@ -65,6 +65,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db().delete(auditEvents).where(eq(auditEvents.agentId, foreignAgentId));
   await db().delete(agents).where(eq(agents.id, foreignAgentId));
+  await db().delete(councils).where(eq(councils.tenantId, foreignTenantId));
   await db().delete(tenants).where(eq(tenants.id, foreignTenantId));
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, FOREIGN_PSEUDO));
 

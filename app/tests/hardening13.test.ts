@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { db } from "../src/server/db/client";
 import {
-  agents, auditEvents, capabilities, decisions, executions, intents,
+  agents, auditEvents, capabilities, councils, decisions, executions, intents,
   networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { pseudonymFor } from "../src/server/events/projection";
@@ -219,6 +219,7 @@ afterAll(async () => {
   await db().delete(agents).where(eq(agents.tenantId, tenantId));
   await db().delete(tools).where(eq(tools.tenantId, tenantId));
   await db().delete(policies).where(eq(policies.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonymFor(AGENT_KEY)));
   delete process.env.DEMO_TENANT_SLUG;

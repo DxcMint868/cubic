@@ -11,14 +11,16 @@ import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
-  agents, approvals, auditEvents, capabilities, decisions, executions,
+  agents, approvals, auditEvents, capabilities, councils, decisions, executions,
   intents, networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
 import { seed } from "../src/server/demo/seed";
 import { CHAT_TEMPLATES, PLAY_BEATS, getTemplate } from "../src/server/demo/templates";
 import { validateParsed, parseFreeText } from "../src/server/demo/parse";
-import { clearMcpCacheForTests, NO_TOOL_REDIRECT } from "../src/server/demo/chat";
+import { clearMcpCacheForTests } from "../src/server/demo/chat";
+import { loadAgentIdentity } from "../src/server/demo/identity";
+import { buildSystemPrompt } from "../src/server/demo/parse";
 import { StaticContextProvider, setContextProvider } from "../src/server/gateway/context/provider";
 import type { ContextProvider, FactsCtx, FactsIntentRef } from "../src/server/gateway/context/provider";
 import { POST as mcpPOST } from "../src/app/api/mcp/route";
@@ -210,6 +212,9 @@ afterAll(async () => {
       for (const id of agentIds) await db().delete(intents).where(eq(intents.agentId, id));
     }
     await db().delete(auditEvents).where(eq(auditEvents.tenantId, t.id));
+    // Worktree drift: the uncommitted councils change seeds per-tenant rows
+    // with an FK to tenants — delete before the tenant or teardown trips.
+    await db().delete(councils).where(eq(councils.tenantId, t.id));
     await db().delete(tasks).where(eq(tasks.tenantId, t.id));
     await db().delete(agents).where(eq(agents.tenantId, t.id));
     await db().delete(tools).where(eq(tools.tenantId, t.id));
@@ -383,7 +388,7 @@ describe("plan-16 adversarial display + no-provider templates-only", () => {
     expect(countAfter).toBe(countBefore);
   }, 60000);
 
-  it("free text without provider → honest disabled no-tool state with redirect voice", async () => {
+  it("free text without provider → honest disabled no-tool state with the speaker's voice", async () => {
     const { json } = await chat({ message: "merge PR 421 please" });
     expect(json.ok).toBe(true);
     const turn = json.data!.turn;
@@ -391,8 +396,21 @@ describe("plan-16 adversarial display + no-provider templates-only", () => {
     expect(turn.tool).toBeNull();
     expect(turn.provider.configured).toBe(false);
     expect(turn.no_tool_message).toBe(NO_TOOL_MESSAGE);
-    // The agent still speaks: canned redirect, never a bare fallback.
-    expect(turn.reply).toBe(NO_TOOL_REDIRECT);
+    // The agent still speaks AS itself: deploy-agent's redirect, never a
+    // bare fallback or another agent's voice.
+    expect(turn.reply).toContain("deploy-agent");
+    expect(turn.reply).toContain("agent:8472");
+    expect(turn.reply).toContain("scenario below");
+  }, 60000);
+
+  it("treasury speaker gets treasury's redirect voice, not deploy-speak", async () => {
+    const { json } = await chat({ message: "merge PR 421 please", agent_key: "agent:treasury" });
+    expect(json.ok).toBe(true);
+    const turn = json.data!.turn;
+    expect(turn.kind).toBe("no-tool");
+    expect(turn.reply).toContain("treasury-agent");
+    expect(turn.reply).toContain("treasury.swap");
+    expect(turn.reply).not.toContain("deploy-agent");
   }, 60000);
 
   it("unknown template id is a 400", async () => {
@@ -502,6 +520,21 @@ describe("plan-16 parse.ts (pure, off-camera)", () => {
     expect(validateParsed({ tool: "nope", arguments: {} }).tool).toBeNull();
   });
 
+  it("forgives near-miss drafts: default repo/target, coerce pr", () => {
+    // "Read PR number 12" — model omits the repo, pr may arrive as a string.
+    expect(validateParsed({ tool: "github.get_pull_request", arguments: { pr: 12 } }))
+      .toEqual({ tool: "github.get_pull_request", arguments: { repo: "acme/backend", pr: 12 } });
+    expect(validateParsed({ tool: "github.get_pull_request", arguments: { pr: "12" } }))
+      .toEqual({ tool: "github.get_pull_request", arguments: { repo: "acme/backend", pr: 12 } });
+    expect(validateParsed({ tool: "scanner.scan", arguments: {} }))
+      .toEqual({ tool: "scanner.scan", arguments: { target: "acme/backend#421" } });
+    // Explicit values are never overridden.
+    expect(validateParsed({ tool: "github.get_pull_request", arguments: { repo: "other/repo", pr: 7 } }))
+      .toEqual({ tool: "github.get_pull_request", arguments: { repo: "other/repo", pr: 7 } });
+    // Garbage pr still fails.
+    expect(validateParsed({ tool: "github.get_pull_request", arguments: { pr: "twelve" } }).tool).toBeNull();
+  });
+
   it("passes the model-drafted reply through, drops junk", () => {
     expect(
       validateParsed({ tool: "task.complete", arguments: {}, reply: "Wrapping up now." }).reply,
@@ -512,6 +545,113 @@ describe("plan-16 parse.ts (pure, off-camera)", () => {
     expect(
       validateParsed({ tool: "nope", arguments: {}, reply: "I can't do that." }).reply,
     ).toBe("I can't do that.");
+  });
+});
+
+describe("plan-16 chat agent picker", () => {
+  it("GET lists demo agents and each template's owning agent", async () => {
+    const res = await chatGET(new Request(`${loopback}/api/demo/chat`));
+    const body = (await res.json()) as {
+      ok: boolean;
+      data: {
+        agents: Array<{ agent_key: string; name: string }>;
+        templates: Array<{ id: string; agent_key: string }>;
+      };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.data.agents.map((a) => a.agent_key).sort()).toEqual(
+      ["agent:8472", "agent:lab-1", "agent:reader", "agent:treasury"].sort(),
+    );
+    const byId = new Map(body.data.templates.map((t) => [t.id, t.agent_key]));
+    expect(byId.get("deploy-read")).toBe("agent:8472");
+    expect(byId.get("treasury-swap")).toBe("agent:treasury");
+    expect(byId.get("branch-low-rep")).toBe("agent:lab-1");
+  }, 60000);
+
+  it("agent_key override speaks as another agent (reader reads PR 421)", async () => {
+    const { json } = await chat({ template_id: "deploy-read", agent_key: "agent:reader" });
+    expect(json.ok).toBe(true);
+    const turn = json.data!.turn;
+    expect(turn.decision).toBe("allow");
+    const [taskRow] = await db().select().from(tasks).where(eq(tasks.id, turn.task_id!));
+    const [reader] = await db()
+      .select()
+      .from(agents)
+      .where(and(eq(agents.tenantId, tenantId), eq(agents.agentKey, "agent:reader")));
+    expect(taskRow.agentId).toBe(reader.id);
+  }, 60000);
+
+  it("unknown agent_key is a 400", async () => {
+    const { status, json } = await chat({ template_id: "deploy-read", agent_key: "agent:nope" });
+    expect(status).toBe(400);
+    expect(json.ok).toBe(false);
+  }, 60000);
+
+  it("pinned task from another agent's session mints fresh instead of merging", async () => {
+    const first = await chat({ template_id: "deploy-read" });
+    const taskA = first.json.data!.turn.task_id!;
+    const second = await chat({ template_id: "deploy-read", task_id: taskA, agent_key: "agent:reader" });
+    const taskB = second.json.data!.turn.task_id!;
+    expect(taskB).not.toBe(taskA);
+    const [rowB] = await db().select().from(tasks).where(eq(tasks.id, taskB));
+    const [reader] = await db()
+      .select()
+      .from(agents)
+      .where(and(eq(agents.tenantId, tenantId), eq(agents.agentKey, "agent:reader")));
+    expect(rowB.agentId).toBe(reader.id);
+  }, 60000);
+});
+
+describe("plan-16 agent identity (SOUL/MEMORY → prompt)", () => {
+  it("loads the speaking agent's docs from disk", async () => {
+    const identity = await loadAgentIdentity("agent:treasury", "treasury-agent", ["treasury.swap"]);
+    expect(identity.soul).toContain("treasury agent");
+    expect(identity.memory).not.toBeNull();
+    expect(identity.tools).toEqual(["treasury.swap"]);
+  });
+
+  it("missing docs degrade to nulls, never throw", async () => {
+    const identity = await loadAgentIdentity("agent:does-not-exist", "ghost", []);
+    expect(identity.soul).toBeNull();
+    expect(identity.memory).toBeNull();
+  });
+
+  it("system prompt speaks AS the agent with its tools", () => {
+    const prompt = buildSystemPrompt({
+      key: "agent:treasury",
+      name: "treasury-agent",
+      soul: "I move the CIO's money.",
+      memory: null,
+      tools: ["treasury.swap", "task.complete"],
+    });
+    expect(prompt).toContain("You ARE treasury-agent (agent:treasury)");
+    expect(prompt).toContain("I move the CIO's money.");
+    expect(prompt).toContain("treasury.swap");
+    // The mapping contract survives the identity block.
+    expect(prompt).toContain("STRICT JSON");
+  });
+
+  it("parseFreeText sends the identity prompt to the provider", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    try {
+      let system = "";
+      const out = await parseFreeText("hi, who are you", {
+        fetchImpl: (async (_url: unknown, init: { body: string }) => {
+          system = (JSON.parse(init.body as string) as { messages: Array<{ content: string }> }).messages[0].content;
+          return {
+            ok: true,
+            json: async () => ({ choices: [{ message: { content: '{"tool": null, "arguments": {}, "reply": "I am the treasury agent."}' } }] }),
+          } as unknown as Response;
+        }) as unknown as typeof fetch,
+        agent: { key: "agent:treasury", name: "treasury-agent", soul: "I move money.", tools: ["treasury.swap"] },
+      });
+      expect(system).toContain("treasury-agent");
+      expect(system).toContain("I move money.");
+      expect(out.tool).toBeNull();
+      expect(out.reply).toBe("I am the treasury agent.");
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
   });
 });
 

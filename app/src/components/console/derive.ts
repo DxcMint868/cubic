@@ -178,6 +178,9 @@ export interface ApprovalItem {
   matchedPolicy: string | null;
   matchedRuleId: string | null;
   riskScore: number | null;
+  council: string | null;
+  signer: string | null;
+  resolvedBy: string | null;
 }
 
 export function deriveApprovals(events: AuditEvent[]): {
@@ -205,6 +208,9 @@ export function deriveApprovals(events: AuditEvent[]): {
         matchedPolicy: null,
         matchedRuleId: null,
         riskScore: null,
+        council: null,
+        signer: null,
+        resolvedBy: null,
       };
       byId.set(id, item);
     }
@@ -249,6 +255,7 @@ export function deriveApprovals(events: AuditEvent[]): {
       item.requestedAt = event.created_at;
       item.taskId = event.task_id;
       item.agentId = event.agent_id;
+      item.council = asString(payload.council) ?? item.council;
       applyPolicy(item);
     } else if (event.event_type === "ledger.approval.completed") {
       const id = asString(payload.approval_id);
@@ -258,6 +265,9 @@ export function deriveApprovals(events: AuditEvent[]): {
       item.status = outcome === "approved" ? "approved" : "rejected";
       item.completedAt = event.created_at;
       item.provider = asString(payload.provider) ?? item.provider;
+      item.signer = asString(payload.signer) ?? item.signer;
+      item.resolvedBy = asString(payload.resolved_by) ?? item.resolvedBy;
+      item.council = asString(payload.council) ?? item.council;
       if (!item.requestedAt) item.requestedAt = event.created_at;
     } else if (event.event_type === "capability.escalated") {
       const id = asString(payload.approval_id);
@@ -266,6 +276,7 @@ export function deriveApprovals(events: AuditEvent[]): {
       item.decisionId = asString(payload.decision_id) ?? item.decisionId;
       item.intentId = asString(payload.intent_id) ?? item.intentId;
       item.reasons = asStringArray(payload.reason_codes);
+      item.council = asString(payload.council) ?? item.council;
       applyPolicy(item);
     } else if (event.event_type === "policy.evaluated") {
       const decisionId = asString(payload.decision_id);

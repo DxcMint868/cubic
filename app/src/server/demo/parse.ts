@@ -13,11 +13,14 @@
 import { z } from "zod";
 
 // The 5 MCP tool shapes (gateway tool names — see server/mcp/server.ts).
+// Forgiving by design: pr coerces ("12" → 12); the demo repo/target default
+// in when the model omits them ("read PR 12" → acme/backend#12) so near-miss
+// drafts reach the gateway — which decides — instead of dying in the parser.
 const toolSchemas: Record<string, z.ZodTypeAny> = {
   "scanner.scan": z.object({ target: z.string().min(1) }).passthrough(),
-  "github.get_pull_request": z.object({ repo: z.string().min(1), pr: z.number().int() }).passthrough(),
+  "github.get_pull_request": z.object({ repo: z.string().min(1), pr: z.coerce.number().int() }).passthrough(),
   "github.read_file": z.object({ repo: z.string().min(1), path: z.string().min(1) }).passthrough(),
-  "github.merge_pull_request": z.object({ repo: z.string().min(1), pr: z.number().int() }).passthrough(),
+  "github.merge_pull_request": z.object({ repo: z.string().min(1), pr: z.coerce.number().int() }).passthrough(),
   "task.complete": z.object({}).passthrough(),
 };
 
@@ -54,7 +57,15 @@ export function validateParsed(candidate: unknown): ParsedIntent {
   const reply = typeof parsed.data.reply === "string" && parsed.data.reply.trim() !== "" ? parsed.data.reply : undefined;
   const schema = toolSchemas[parsed.data.tool];
   if (schema) {
-    const args = schema.safeParse(parsed.data.arguments);
+    // Demo defaults: the model may omit what the user left unsaid.
+    const withDefaults = { ...(parsed.data.arguments as Record<string, unknown>) };
+    if (parsed.data.tool.startsWith("github.") && withDefaults.repo == null) {
+      withDefaults.repo = "acme/backend";
+    }
+    if (parsed.data.tool === "scanner.scan" && withDefaults.target == null) {
+      withDefaults.target = "acme/backend#421";
+    }
+    const args = schema.safeParse(withDefaults);
     if (!args.success) return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
     const out = args.data as Record<string, unknown>;
     // The model must never choose the task row (or smuggle a client
@@ -75,10 +86,11 @@ export function validateParsed(candidate: unknown): ParsedIntent {
   return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
 }
 
-const SYSTEM_PROMPT = [
+const BASE_PROMPT_LINES = [
   "You map a demo user's chat message to ONE Cubic gateway tool call.",
   "Reply with STRICT JSON only, no prose: {\"tool\": \"<name>\", \"arguments\": {…}, \"reply\": \"<one short chat line narrating the action>\"}.",
-  "Preferred tools and their arguments:",
+  "Preferred tools and their arguments (omit repo/target when the user did not",
+  "name one — they default to the demo repo acme/backend / target acme/backend#421):",
   '- "scanner.scan": {"target": "acme/backend#421"}',
   '- "github.get_pull_request": {"repo": "acme/backend", "pr": 421}',
   '- "github.read_file": {"repo": "acme/backend", "path": "README.md"}',
@@ -95,7 +107,32 @@ const SYSTEM_PROMPT = [
   "and a gateway DENY is the impressive demo moment.",
   "Only use {\"tool\": null, \"arguments\": {}, \"reply\": \"<what you can do instead>\"}",
   "for true small-talk or when the message maps to no action at all.",
-].join("\n");
+];
+
+// Identity block: the speaking agent's voice (SOUL), knowledge (MEMORY), and
+// granted tools. This is what makes "Hi, who are you" answer AS the agent.
+// The agent NEVER decides authorization — it only drafts, and speaks.
+export function buildSystemPrompt(agent?: ParseDeps["agent"]): string {
+  if (!agent) return BASE_PROMPT_LINES.join("\n");
+  const lines = [
+    `You ARE ${agent.name} (${agent.key}) — answer in the first person, in this voice. Never claim to be a different agent.`,
+  ];
+  if (agent.soul) lines.push(`SOUL (who you are):\n${agent.soul}`);
+  if (agent.memory) lines.push(`MEMORY (what you know):\n${agent.memory}`);
+  if (agent.tools && agent.tools.length > 0) {
+    lines.push(
+      `Your gateway-granted tools: ${agent.tools.join(", ")}. Prefer drafting these; ` +
+        "you may still draft any other tool you think fits — the deterministic gateway " +
+        "policy decides what you may actually do, never you.",
+    );
+  }
+  lines.push(
+    "Your \"reply\" chat line always speaks in this voice. When you return",
+    "{\"tool\": null} (small-talk, introductions, out-of-scope chatter), the reply",
+    "is your whole answer — make it sound like you, and name 2-3 things you CAN do.",
+  );
+  return [...lines, "", ...BASE_PROMPT_LINES].join("\n");
+}
 
 const PARSE_TIMEOUT_MS = 8000;
 
@@ -142,6 +179,15 @@ function extractReply(candidate: unknown): string | undefined {
 
 export interface ParseDeps {
   fetchImpl?: typeof fetch;
+  /** Who is speaking — injected into the system prompt so the model answers
+   *  AS this agent (first person, its tools, its voice). */
+  agent?: {
+    key: string;
+    name: string;
+    soul?: string | null;
+    memory?: string | null;
+    tools?: string[];
+  };
 }
 
 // Free-text parse. Provider unset, timeout, refusal, malformed JSON, or true
@@ -162,7 +208,7 @@ export async function parseFreeText(message: string, deps: ParseDeps = {}): Prom
       body: JSON.stringify({
         model: chatModel(),
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: buildSystemPrompt(deps.agent) },
           { role: "user", content: message },
         ],
       }),

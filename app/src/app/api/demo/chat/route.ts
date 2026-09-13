@@ -1,13 +1,17 @@
 // plan-16 — POST /api/demo/chat + GET bootstrap (chat transport).
 //
-// POST accepts {message, template_id?, task_id?}. Template ids resolve to
-// EXACT {tool, arguments} with no LLM; free text goes through the OpenRouter
-// parser (any failure → {tool: null} → display-only no-tool state, gateway
-// never called). Returns {intent, decision, trace_url, network_url} in the
-// standard envelope. GET returns the template catalog + provider status +
+// POST accepts {message, template_id?, task_id?, agent_key?}. Template ids
+// resolve to EXACT {tool, arguments} with no LLM (a template's pinned
+// agent_key wins); free text goes through the OpenRouter parser (near-miss
+// drafts default to the demo repo so they reach the gateway; true small-talk
+// or failures → {tool: null} → display-only no-tool state, gateway never
+// called). agent_key speaks as another demo agent; a pinned task from a
+// different agent's session mints fresh instead of merging. Returns {intent,
+// decision, trace_url, network_url} in the standard envelope. GET returns the
+// template catalog (with owning agent_key) + demo agents + provider status +
 // tools chip count (single source of truth for the chat page).
 import { z } from "zod";
-import { CHAT_TEMPLATES, mcpToolCount, runChatTurn } from "@/server/demo/chat";
+import { CHAT_TEMPLATES, listDemoAgents, mcpToolCount, runChatTurn } from "@/server/demo/chat";
 import { chatModel, parseProviderConfigured } from "@/server/demo/parse";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +20,7 @@ const bodySchema = z.object({
   message: z.string().min(1).max(2000).optional(),
   template_id: z.string().min(1).max(64).optional(),
   task_id: z.string().uuid().optional(),
+  agent_key: z.string().min(1).max(64).optional(),
 });
 
 function baseUrlOf(request: Request): string {
@@ -28,7 +33,8 @@ export async function GET(request: Request) {
     return Response.json({
       ok: true,
       data: {
-        templates: CHAT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, chat_text: t.chat_text })),
+        templates: CHAT_TEMPLATES.map((t) => ({ id: t.id, label: t.label, chat_text: t.chat_text, agent_key: t.agent_key ?? "agent:8472" })),
+        agents: await listDemoAgents(),
         provider: { configured: parseProviderConfigured(), model: chatModel() },
         tools: { connected: tools },
         client_label: "Demo agent (MCP client)",
@@ -54,7 +60,7 @@ export async function POST(request: Request) {
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
       return Response.json(
-        { ok: false, error: { code: "INVALID_REQUEST", message: "body must be {message?, template_id?, task_id?}" } },
+        { ok: false, error: { code: "INVALID_REQUEST", message: "body must be {message?, template_id?, task_id?, agent_key?}" } },
         { status: 400 },
       );
     }
@@ -69,6 +75,7 @@ export async function POST(request: Request) {
         ...(parsed.data.message?.trim() ? { message: parsed.data.message } : {}),
         ...(parsed.data.template_id ? { template_id: parsed.data.template_id } : {}),
         ...(parsed.data.task_id ? { task_id: parsed.data.task_id } : {}),
+        ...(parsed.data.agent_key ? { agent_key: parsed.data.agent_key } : {}),
       },
       baseUrlOf(request),
     );
@@ -84,7 +91,8 @@ export async function POST(request: Request) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const status = message.startsWith("unknown template:") ? 400 : 500;
+    const badRequest = message.startsWith("unknown template:") || message.startsWith("unknown agent:");
+    const status = badRequest ? 400 : 500;
     return Response.json(
       { ok: false, error: { code: status === 400 ? "INVALID_REQUEST" : "INTERNAL", message } },
       { status },

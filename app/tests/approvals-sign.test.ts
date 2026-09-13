@@ -6,9 +6,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+
+// Council member signer: seed's deploy-council (1-of-1) holds AGENT_OWNER_KEY.
+// Random accounts exercise the non-member gate.
+function ownerAccount() {
+  const key = process.env.AGENT_OWNER_KEY as `0x${string}`;
+  if (!key) throw new Error("AGENT_OWNER_KEY missing — council tests need the throwaway owner key");
+  return privateKeyToAccount(key);
+}
 import { db } from "../src/server/db/client";
 import {
-  agents, approvals, auditEvents, capabilities, decisions, executions,
+  agents, approvals, auditEvents, capabilities, councils, decisions, executions,
   intents, networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
@@ -91,6 +99,7 @@ afterAll(async () => {
     await db().delete(agents).where(eq(agents.tenantId, t.id));
     await db().delete(tools).where(eq(tools.tenantId, t.id));
     await db().delete(policies).where(eq(policies.tenantId, t.id));
+    await db().delete(councils).where(eq(councils.tenantId, t.id));
     await db().delete(tenants).where(eq(tenants.id, t.id));
   }
   const pseudo = createHash("sha256").update("agent:8472|cubic-network-v1").digest("hex").slice(0, 16);
@@ -115,7 +124,7 @@ async function escalateMerge(): Promise<string> {
 describe("signed approvals", () => {
   it("valid wallet signature resolves + seals signer/signature into the event", async () => {
     const approvalId = await escalateMerge();
-    const account = privateKeyToAccount(generatePrivateKey());
+    const account = ownerAccount();
     const signature = await account.signMessage({ message: approvalSignMessage(approvalId, "approved") });
     const res = await resolve(approvalId, { outcome: "approved", signature, signer: account.address });
     const body = (await res.json()) as {
@@ -157,5 +166,16 @@ describe("signed approvals", () => {
     expect(body.ok).toBe(true);
     expect(body.data.approval_outcome).toBe("rejected");
     expect(body.data.signer).toBeUndefined();
+  }, 60000);
+
+  it("valid signature from a non-member is a 403 (council gate)", async () => {
+    const approvalId = await escalateMerge();
+    const outsider = privateKeyToAccount(generatePrivateKey());
+    const signature = await outsider.signMessage({ message: approvalSignMessage(approvalId, "approved") });
+    const res = await resolve(approvalId, { outcome: "approved", signature, signer: outsider.address });
+    expect(res.status).toBe(403);
+    const [row] = await db().select().from(approvals).where(eq(approvals.id, approvalId));
+    expect(row.status).toBe("pending");
+    expect(row.council).toBe("deploy-council");
   }, 60000);
 });

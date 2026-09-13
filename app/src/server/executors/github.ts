@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { config } from "../config";
 import type { Executor, ExecutorResult } from "./registry";
 
@@ -82,13 +83,30 @@ export class GithubExecutor implements Executor {
         // plan-10: deploy.production normalizes to action deploy_production and
         // the seed wires it to this executor, but no case handled it — every
         // approved deploy died with "unsupported action". There is no real
-        // deploy target in the MVP, so this is mock-always (labeled as such);
-        // the authorization chain around it (escalate → approval → capability
-        // → execution) is the real, tested behavior.
+        // deploy target in the MVP (a real Vercel production deploy on camera
+        // is a mutation we deliberately do NOT perform), so this is
+        // mock-always with a Vercel-flavored payload — realistic enough to
+        // read on camera, labeled as simulation. The authorization chain
+        // around it (escalate → approval → capability → execution) is the
+        // real, tested behavior.
         if (capability.action === "deploy_production") {
+          const slug =
+            repo.replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "app";
+          const hex = createHash("sha256").update(`cubic-deploy|${repo}`).digest("hex");
+          const url = `https://${slug}-cubic-${hex.slice(0, 4)}.vercel.app`;
           return {
-            summary: `Deployed ${repo} to production (mock)`,
-            result: { repo, environment: "production", deployed: true },
+            summary: `Deployed ${repo} to production → ${url} (mock)`,
+            result: {
+              repo,
+              environment: "production",
+              deployed: true,
+              provider: "vercel-simulated",
+              deployment_id: `dpl_${hex.slice(0, 12)}`,
+              url,
+              inspector_url: `https://vercel.com/cubic/${slug}/${hex.slice(0, 12)}`,
+              target: "production",
+              status: "READY",
+            },
             mode: "mock",
           };
         }

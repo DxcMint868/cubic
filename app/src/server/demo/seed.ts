@@ -1,11 +1,12 @@
 import { eq, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
+import { privateKeyToAccount } from "viem/accounts";
 import { config } from "../config";
 import { logger } from "../logging";
 import { db } from "../db/client";
 import {
   tenants, agents, tools, policies, tasks, intents, decisions,
-  capabilities, approvals, executions, payments, auditEvents, networkEvents,
+  capabilities, approvals, executions, payments, auditEvents, networkEvents, councils,
 } from "../db/schema";
 
 const withPseudonym = (agentKey: string) =>
@@ -54,7 +55,7 @@ const fixture = {
           "tools": ["github.get_pull_request", "github.read_file", "github.merge_pull_request", "deploy.production", "scanner.scan", "task.complete"],
           "decision": "deny", "reason": "tool_not_allowed" },
         { "id": "reputation-floor", "type": "min_reputation", "min": 0.80, "decision": "escalate", "reason": "reputation_below_threshold" },
-        { "id": "risk-approval", "type": "risk_class", "match": ["high", "critical"], "decision": "escalate", "reason": "risk_requires_approval" },
+        { "id": "risk-approval", "type": "risk_class", "match": ["high", "critical"], "decision": "escalate", "reason": "risk_requires_approval", "council": "treasury-council" },
         { "id": "default-allow", "type": "default", "decision": "allow", "reason": "policy_default_allow" }
       ],
     },
@@ -70,7 +71,7 @@ const fixture = {
       name: "production-merge-v1", version: 1, rules: [
         { "id": "merge-only", "type": "tool_allowlist", "tools": ["github.merge_pull_request"], "decision": "deny", "reason": "tool_not_allowed" },
         { "id": "merge-reputation", "type": "min_reputation", "min": 0.90, "decision": "escalate", "reason": "reputation_below_threshold" },
-        { "id": "merge-risk", "type": "risk_class", "match": ["high"], "decision": "escalate", "reason": "risk_requires_approval" },
+        { "id": "merge-risk", "type": "risk_class", "match": ["high"], "decision": "escalate", "reason": "risk_requires_approval", "council": "deploy-council" },
         { "id": "default-deny", "type": "default", "decision": "deny", "reason": "policy_default_deny" }
       ],
     },
@@ -81,6 +82,29 @@ const fixture = {
     budget_usd_cents: 50, status: "open",
   }],
 } as const;
+
+// Council roster (off-chain multisig; members are wallet addresses). Keyed off
+// the throwaway testnet keys when present — keyless environments seed empty
+// member lists (signed path closed, unsigned stand-in still resolves).
+function councilFixture(): Array<{ name: string; members: string[]; threshold: number; safe_address: null }> {
+  const members: Record<string, string[]> = {};
+  try {
+    const owner = process.env.AGENT_OWNER_KEY;
+    const client = process.env.AGENT_CLIENT_KEY;
+    const ownerAddr = owner ? privateKeyToAccount(owner as `0x${string}`).address : null;
+    const clientAddr = client ? privateKeyToAccount(client as `0x${string}`).address : null;
+    if (ownerAddr) {
+      members["deploy-council"] = [ownerAddr];
+      members["treasury-council"] = clientAddr ? [ownerAddr, clientAddr] : [ownerAddr];
+    }
+  } catch {
+    // no keys / no viem — councils seed empty (unsigned resolves unaffected)
+  }
+  return [
+    { name: "deploy-council", members: members["deploy-council"] ?? [], threshold: 1, safe_address: null },
+    { name: "treasury-council", members: members["treasury-council"] ?? [], threshold: 2, safe_address: null },
+  ];
+}
 
 export async function seed(): Promise<{ agents: number; tools: number; policies: number; tasks: number }> {
   let [tenant] = await db().select().from(tenants).where(eq(tenants.slug, config().DEMO_TENANT_SLUG));
@@ -126,6 +150,7 @@ export async function seed(): Promise<{ agents: number; tools: number; policies:
   await db().delete(agents).where(eq(agents.tenantId, tenant.id));
   await db().delete(tools).where(eq(tools.tenantId, tenant.id));
   await db().delete(policies).where(eq(policies.tenantId, tenant.id));
+  await db().delete(councils).where(eq(councils.tenantId, tenant.id));
   await db().delete(networkEvents).where(inArray(networkEvents.agentPseudonym, pseudonyms));
 
   // Upsert fixture — explicit field-by-field mapping, no generic case converter.
@@ -152,6 +177,13 @@ export async function seed(): Promise<{ agents: number; tools: number; policies:
     name: policy.name,
     version: policy.version,
     rules: policy.rules.map((rule) => ({ ...rule })),
+  })));
+  await db().insert(councils).values(councilFixture().map((c) => ({
+    tenantId: tenant.id,
+    name: c.name,
+    members: [...c.members],
+    threshold: c.threshold,
+    safeAddress: c.safe_address,
   })));
 
   const insertedAgents = await db().select().from(agents).where(eq(agents.tenantId, tenant.id));

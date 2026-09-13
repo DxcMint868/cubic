@@ -25,6 +25,7 @@ import { runToolCall, type ToolCallData } from "../gateway/orchestrator";
 import { consumeCapability } from "../capability/verify";
 import type { Rule } from "../gateway/policy/engine";
 import { CHAT_TEMPLATES, getTemplate, type ChatTemplate } from "./templates";
+import { loadAgentIdentity, redirectFor } from "./identity";
 import { chatModel, parseFreeText, parseProviderConfigured } from "./parse";
 import { ANCHORED_TYPES, anchorTopicId, fingerprint, topicUrl } from "../anchors/hcs";
 
@@ -34,12 +35,6 @@ const AGENT_KEY = "agent:8472";
 const DEMO_CLIENT_LABEL = "Demo agent (MCP client)";
 
 export const NO_TOOL_MESSAGE = "No tool matched — nothing was sent to the gateway";
-
-// Canned agent voice when the parser produced no reply at all (provider
-// unset, timeout, non-OK, empty content): states the boundary + what works,
-// so a no-tool turn never renders as a bare fallback.
-export const NO_TOOL_REDIRECT =
-  "I can read PRs, run scans, merge, and deploy through the gateway — try a scenario below.";
 
 // Gateway tools backed by the MCP facade (sdk names in server/mcp/server.ts).
 const MCP_GATEWAY_TO_SDK: Record<string, string> = {
@@ -384,6 +379,24 @@ export interface ChatInput {
   message?: string;
   template_id?: string;
   task_id?: string;
+  /** Speak as a different demo agent (template.agent_key still wins). */
+  agent_key?: string;
+}
+
+export interface DemoAgentSummary {
+  agent_key: string;
+  name: string;
+}
+
+/** Demo-tenant agents for the chat picker, in seed order. */
+export async function listDemoAgents(): Promise<DemoAgentSummary[]> {
+  const tenant = await resolveTenant();
+  const rows = await db()
+    .select()
+    .from(agents)
+    .where(eq(agents.tenantId, tenant.id))
+    .orderBy(asc(agents.createdAt));
+  return rows.map((a) => ({ agent_key: a.agentKey, name: a.name }));
 }
 
 export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<ChatTurn> {
@@ -407,25 +420,45 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
     reply = template.reply ?? null;
   } else if (typeof input.message === "string" && input.message.trim() !== "") {
     chatText = input.message;
-    const parsed = await parseFreeText(input.message);
+  } else {
+    throw new Error("chat requires template_id or a non-empty message");
+  }
+
+  // Explicit agent override (chat picker / free text). A template's pinned
+  // agent_key still wins so scripted beats keep their identity. Resolved
+  // before parsing so the model speaks AS this agent (SOUL/MEMORY/voice) and
+  // an unknown speaker 400s on every turn, not just gateway ones.
+  const agentKey = template?.agent_key ?? input.agent_key ?? AGENT_KEY;
+  const [actor] = await db()
+    .select()
+    .from(agents)
+    .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, agentKey)));
+  if (!actor) throw new Error(`unknown agent: ${agentKey}`);
+  const identity = await loadAgentIdentity(
+    agentKey,
+    actor.name,
+    (actor.declaredCapabilities ?? []) as string[],
+  );
+
+  if (!input.template_id) {
+    const parsed = await parseFreeText(chatText, { agent: identity });
     tool = parsed.tool;
     args = parsed.arguments;
     reply = parsed.reply ?? null;
     kind = tool ? "tool" : "no-tool";
-  } else {
-    throw new Error("chat requires template_id or a non-empty message");
   }
 
   // Display-only no-tool state: plain words, gateway never called. trace_url
   // stays null unconditionally — a turn with zero gateway rows must never
   // link to a trace full of other turns' Decisions. reply always carries a
-  // voice (model prose, model JSON reply, or the canned redirect).
+  // voice (model prose in the speaker's voice, model JSON reply, or the
+  // per-agent canned redirect).
   if (kind === "no-tool" || tool === null) {
     return buildTurn({
       kind: "no-tool",
       template_id: template?.id ?? null,
       chat_text: chatText,
-      reply: reply ?? NO_TOOL_REDIRECT,
+      reply: reply ?? redirectFor(identity),
       task_id: input.task_id ?? null,
       tool: null,
       arguments: {},
@@ -440,12 +473,15 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
   // chat turn lands in its own session task, so chat sessions show up in
   // /console/tasks instead of piggybacking the agent's latest open task.
   let taskId = input.task_id ?? null;
-  const agentKey = template?.agent_key ?? AGENT_KEY;
-  const [actor] = await db()
-    .select()
-    .from(agents)
-    .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, agentKey)));
-  if (!actor) throw new Error(`demo chat: ${agentKey} missing`);
+  // A pinned task from another agent's session must not absorb this turn —
+  // switching speakers starts a fresh Chat task instead.
+  if (taskId) {
+    const [pinned] = await db()
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, taskId), eq(tasks.tenantId, tenant.id)));
+    if (!pinned || pinned.agentId !== actor.id) taskId = null;
+  }
   if (template?.task) {
     const [task] = await db()
       .insert(tasks)

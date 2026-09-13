@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { verifyMessage } from "viem";
 import { db } from "@/server/db/client";
-import { agents, approvals, decisions, intents, tasks, tools } from "@/server/db/schema";
+import { agents, approvals, councils, decisions, intents, tasks, tools } from "@/server/db/schema";
 import { emit } from "@/server/events/bus";
 import { config } from "@/server/config";
 import { approvalSignMessage } from "@/lib/approval-message";
@@ -102,11 +102,58 @@ export async function POST(
       );
     }
 
+    // Council multisig (off-chain, Safe-compatible semantics): when the
+    // matched rule named a council, signed resolutions collect member
+    // signatures until threshold; any member reject vetoes at once. Unsigned
+    // dev resolves bypass councils — today's stand-in behavior, labeled.
+    let councilSignatures: Array<{ signer: string; signature: string }> = [];
+    if (approval.council && approvalSignature) {
+      const [decisionForTenant] = await db().select().from(decisions).where(eq(decisions.id, approval.decisionId));
+      if (!decisionForTenant) throw new Error(`approval ${id}: decision row missing`);
+      const [intentForTenant] = await db().select().from(intents).where(eq(intents.id, decisionForTenant.intentId));
+      if (!intentForTenant?.taskId) throw new Error(`approval ${id}: intent task missing`);
+      const [taskForTenant] = await db().select().from(tasks).where(eq(tasks.id, intentForTenant.taskId));
+      if (!taskForTenant) throw new Error(`approval ${id}: task row missing`);
+      const [council] = await db()
+        .select()
+        .from(councils)
+        .where(and(eq(councils.tenantId, taskForTenant.tenantId), eq(councils.name, approval.council)));
+      if (!council) throw new Error(`approval ${id}: council missing ${approval.council}`);
+      const members = ((council.members ?? []) as string[]).map((m) => m.toLowerCase());
+      if (!members.includes(approvalSignature.signer.toLowerCase())) {
+        return Response.json(
+          { ok: false, error: { code: "CAPABILITY_REJECTED", message: `signer is not a member of ${approval.council}` } },
+          { status: 403 },
+        );
+      }
+      const collected = ((approval.signatures ?? []) as Array<{ signer: string; signature: string }>)
+        .filter((s) => s.signer.toLowerCase() !== approvalSignature.signer.toLowerCase());
+      collected.push(approvalSignature);
+      councilSignatures = collected;
+      if (outcome === "approved" && new Set(collected.map((s) => s.signer.toLowerCase())).size < council.threshold) {
+        await db().update(approvals).set({ signatures: collected }).where(eq(approvals.id, id));
+        return Response.json({
+          ok: true,
+          data: {
+            approval_id: approval.id,
+            status: "collecting",
+            council: approval.council,
+            threshold: council.threshold,
+            collected: collected.length,
+          },
+        }, { status: 202 });
+      }
+    }
+
     // Claim the row atomically: only a still-pending approval resolves; a
     // second resolve finds zero updated rows.
     const claimed = await db()
       .update(approvals)
-      .set({ status: outcome, completedAt: new Date().toISOString() })
+      .set({
+        status: outcome,
+        completedAt: new Date().toISOString(),
+        ...(councilSignatures.length ? { signatures: councilSignatures } : {}),
+      })
       .where(and(eq(approvals.id, id), eq(approvals.status, "pending")))
       .returning();
     if (claimed.length === 0) {
@@ -140,6 +187,9 @@ export async function POST(
           outcome,
           resolved_by: resolvedBy,
           ...(approvalSignature ? { signer: approvalSignature.signer, signature: approvalSignature.signature } : {}),
+          ...(approval.council ? { council: approval.council } : {}),
+          ...(councilSignatures.length ? { signatures: councilSignatures } : {}),
+          ...(approval.council && !approvalSignature ? { council_bypass: "unsigned-dev-resolve" } : {}),
         },
       },
       meta,

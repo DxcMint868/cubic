@@ -266,6 +266,10 @@ export default function DemoChat() {
   // so chat sessions land in /console/tasks. Adopted from the first turn that
   // returns one; template-spec tasks (over-budget beat) always mint their own.
   const [sessionTaskId, setSessionTaskId] = useState<string | null>(null);
+  // Speaker override: null follows the bootstrap default (first demo agent).
+  // Switching speakers resets the session pin — the server mints a fresh Chat
+  // task rather than merging turns into another agent's session.
+  const [agentOverride, setAgentOverride] = useState<string | null>(null);
 
 function describeFailure(err: unknown): string {
   if (err instanceof TypeError && err.message === "Failed to fetch") {
@@ -293,7 +297,11 @@ function describeFailure(err: unknown): string {
     setItems((prev) => [...prev, { kind: "user", text: chat_text }, { kind: "pending", id: pid }]);
     try {
       const res = await withTimeout(
-        postChatTurn(sessionTaskId ? { template_id, task_id: sessionTaskId } : { template_id }),
+        postChatTurn({
+          template_id,
+          ...(sessionTaskId ? { task_id: sessionTaskId } : {}),
+          ...(agentOverride ? { agent_key: agentOverride } : {}),
+        }),
       );
       if (!sessionTaskId && res.turn.task_id) setSessionTaskId(res.turn.task_id);
       setItems((prev) =>
@@ -321,7 +329,11 @@ function describeFailure(err: unknown): string {
     setItems((prev) => [...prev, { kind: "user", text: message }, { kind: "pending", id: pid }]);
     try {
       const res = await withTimeout(
-        postChatTurn(sessionTaskId ? { message, task_id: sessionTaskId } : { message }),
+        postChatTurn({
+          message,
+          ...(sessionTaskId ? { task_id: sessionTaskId } : {}),
+          ...(agentOverride ? { agent_key: agentOverride } : {}),
+        }),
       );
       if (!sessionTaskId && res.turn.task_id) setSessionTaskId(res.turn.task_id);
       setItems((prev) =>
@@ -383,9 +395,24 @@ function describeFailure(err: unknown): string {
 
   const providerOn = bootstrap?.provider.configured ?? false;
   const toolsCount = bootstrap?.tools.connected;
-  const allTemplates = bootstrap?.templates ?? [];
+  const demoAgents = bootstrap?.agents ?? [];
+  // Speaker identity: explicit pick, else the bootstrap default (first agent).
+  // "agent:8472" marks shared templates — they run as the speaker, so the
+  // same action can verdict differently per agent. Pinned ones (lab-1,
+  // treasury beats) keep their scripted identity and list under their owner.
+  const speakerKey = agentOverride ?? demoAgents[0]?.agent_key ?? "agent:8472";
+  const speakerName = demoAgents.find((a) => a.agent_key === speakerKey)?.name ?? speakerKey;
+  const allTemplates = (bootstrap?.templates ?? []).filter(
+    (t) => t.agent_key === speakerKey || t.agent_key === "agent:8472",
+  );
   const pinned = allTemplates.filter((t) => (PINNED_TEMPLATE_IDS as readonly string[]).includes(t.id));
   const visible = showAll ? allTemplates : pinned.length > 0 ? pinned : allTemplates;
+
+  function pickAgent(next: string | null): void {
+    setAgentOverride(next);
+    // New speaker, new session — never merge turns into another agent's task.
+    setSessionTaskId(null);
+  }
 
   return (
     <div className="section-pad" style={{ maxWidth: 880, margin: "0 auto" }}>
@@ -398,6 +425,9 @@ function describeFailure(err: unknown): string {
       <p style={{ marginTop: 12, fontSize: 16, color: "#8a8a8a", maxWidth: 620 }}>
         Each scenario runs through the real pipeline. Every turn shows the verbatim
         intent, the real decision with its reason code, and the trace.
+      </p>
+      <p className="mono" style={{ marginTop: 10, fontSize: 10.5, letterSpacing: "0.14em", color: "#5a5a5a" }}>
+        {`SPEAKING AS ${speakerName.toUpperCase()} · ${speakerKey}`}
       </p>
 
       <div style={{ marginTop: 28, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -418,6 +448,36 @@ function describeFailure(err: unknown): string {
           <p className="mono" style={{ fontSize: 10.5, letterSpacing: "0.14em", color: "#5a5a5a" }}>
             TEMPLATES ONLY — NO PROVIDER
           </p>
+        )}
+        {demoAgents.length > 0 && (
+          <label className="mono" style={{ fontSize: 10.5, letterSpacing: "0.14em", color: "#8a8a8a", display: "flex", alignItems: "center", gap: 8 }}>
+            AGENT
+            <select
+              value={speakerKey}
+              onChange={(e) => pickAgent(e.target.value === (demoAgents[0]?.agent_key ?? "agent:8472") ? null : e.target.value)}
+              disabled={busy || playing}
+              className="mono"
+              aria-label="Pick the demo agent speaking"
+              style={{
+                background: "#0b0b0b",
+                border: "1px solid #2e2e2e",
+                borderRadius: 6,
+                padding: "8px 10px",
+                color: "#e8e8e8",
+                fontSize: 11,
+                letterSpacing: "0.1em",
+                outline: "none",
+                cursor: "pointer",
+                maxWidth: 260,
+              }}
+            >
+              {demoAgents.map((a) => (
+                <option key={a.agent_key} value={a.agent_key}>
+                  {a.name} · {a.agent_key}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <button
           onClick={playing ? () => { playAbort.current = true; } : play}

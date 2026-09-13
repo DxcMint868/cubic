@@ -201,10 +201,27 @@ export interface ResolveApprovalResult {
   approval_outcome?: string;
   intent_id?: string;
   signer?: string | null;
+  status?: string;
+  council?: string;
+  threshold?: number;
+  collected?: number;
   payment_required?: unknown;
   capability: ResolveCapability | null;
   payment: unknown;
   execution: ResolveExecution | null;
+}
+
+export interface AnchorVerification {
+  topic_id: string;
+  network: string;
+  topic_url: string;
+  verified_count: number;
+  total: number;
+  events: Array<{ event_type: string; occurred_at: string; fingerprint: string; anchored: boolean; verified: boolean }>;
+}
+
+export function verifyTaskAnchors(taskId: string): Promise<AnchorVerification> {
+  return request<AnchorVerification>(`/api/anchors/verify?task_id=${encodeURIComponent(taskId)}`);
 }
 
 export function getAuditEvents(
@@ -383,6 +400,12 @@ export interface ChatTemplateSummary {
   id: string;
   label: string;
   chat_text: string;
+  agent_key: string;
+}
+
+export interface ChatAgentSummary {
+  agent_key: string;
+  name: string;
 }
 
 export interface ChatTurn {
@@ -426,6 +449,7 @@ export interface ChatTurn {
 
 export interface ChatBootstrap {
   templates: ChatTemplateSummary[];
+  agents: ChatAgentSummary[];
   provider: { configured: boolean; model: string };
   tools: { connected: number | null };
   client_label: string;
@@ -447,6 +471,7 @@ export function postChatTurn(input: {
   message?: string;
   template_id?: string;
   task_id?: string;
+  agent_key?: string;
 }): Promise<ChatResponse> {
   return request<ChatResponse>("/api/demo/chat", {
     method: "POST",
@@ -500,4 +525,64 @@ export function getAgents(): Promise<AgentRegistryEntry[]> {
 
 export function getAgentProfile(id: string): Promise<AgentProfile> {
   return request<AgentProfile>(`/api/console/agents/${id}`);
+}
+
+// Councils (off-chain multisig) + policy rule→council assignment.
+
+export interface Council {
+  id: string;
+  name: string;
+  members: string[];
+  threshold: number;
+  safe_address: string | null;
+}
+
+export interface PolicyDocRule {
+  id: string;
+  type: string;
+  decision: string;
+  reason: string;
+  council: string | null;
+}
+
+export interface PolicyDoc {
+  name: string;
+  version: number;
+  rules: PolicyDocRule[];
+}
+
+export function getCouncils(): Promise<Council[]> {
+  return request<Council[]>("/api/console/councils");
+}
+
+export function createCouncil(input: {
+  name: string;
+  members: string[];
+  threshold: number;
+  safe_address?: string | null;
+}): Promise<Council> {
+  return request<Council>("/api/console/councils", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function getPolicyDocs(): Promise<PolicyDoc[]> {
+  return request<PolicyDoc[]>("/api/console/policies");
+}
+
+export function assignRuleCouncil(
+  policy: string,
+  ruleId: string,
+  council: string | null,
+): Promise<{ policy: string; rule: string; council: string | null }> {
+  return request<{ policy: string; rule: string; council: string | null }>(
+    `/api/console/policies/${encodeURIComponent(policy)}/rules/${encodeURIComponent(ruleId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ council }),
+    },
+  );
 }

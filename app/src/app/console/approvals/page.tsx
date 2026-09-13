@@ -161,6 +161,16 @@ export default function ConsoleApprovals() {
                   >
                     <Tag>RULE {approval.matchedRuleId ?? "—"}</Tag>
                     <Tag>POLICY {approval.matchedPolicy ?? "—"}</Tag>
+                    {approval.council ? (
+                      <Tag>
+                        COUNCIL {approval.council.toUpperCase()}
+                        {result?.status === "collecting" && result.threshold != null
+                          ? ` · ${result.collected ?? 0}/${result.threshold} SIGNED`
+                          : ""}
+                      </Tag>
+                    ) : (
+                      <Tag>SINGLE RESOLVER</Tag>
+                    )}
                     {approval.reasons.map((reason) => (
                       <Tag key={reason}>{reason}</Tag>
                     ))}
@@ -176,6 +186,21 @@ export default function ConsoleApprovals() {
                   </div>
 
                   {result ? (
+                    result.status === "collecting" ? (
+                      <div
+                        className="mono"
+                        style={{
+                          borderTop: "1px solid rgba(255,255,255,0.1)",
+                          paddingTop: 14,
+                          fontSize: 11,
+                          color: "#e8e8e8",
+                        }}
+                      >
+                        COLLECTING — {result.collected ?? 0}/{result.threshold ?? "?"} SIGNED
+                        {signedBy[approval.approvalId] ? ` · LAST ${shortId(signedBy[approval.approvalId], 10)}` : ""}
+                        {" · STILL PENDING — ANOTHER MEMBER MUST SIGN"}
+                      </div>
+                    ) : (
                     <div
                       className="mono"
                       style={{
@@ -210,6 +235,7 @@ export default function ConsoleApprovals() {
                         </span>
                       )}
                     </div>
+                    )
                   ) : (
                     <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                       <button
@@ -259,21 +285,55 @@ export default function ConsoleApprovals() {
                   key={approval.approvalId}
                   className="mono"
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
+                    display: "grid",
+                    gap: 8,
                     fontSize: 11,
                   }}
                 >
-                  <span style={{ color: "#c9c9c9" }}>
-                    {approval.action} — {approval.resource}
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ color: "#5a5a5a" }}>{fmtDateTime(approval.completedAt)}</span>
-                    <ProviderBadge provider={approval.provider} />
-                    <Tag>{approval.status.toUpperCase()}</Tag>
-                  </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span style={{ color: "#c9c9c9" }}>
+                      {approval.action} — {approval.resource}
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ color: "#5a5a5a" }}>{fmtDateTime(approval.completedAt)}</span>
+                      <ProviderBadge provider={approval.provider} />
+                      <Tag>{approval.status.toUpperCase()}</Tag>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 10, color: "#8a8a8a" }}>
+                    <span>
+                      BY {approval.signer ? `${shortId(approval.signer, 12)} (SIGNED)` : `${approval.resolvedBy ?? "unknown"} (UNSIGNED)`}
+                    </span>
+                    {approval.council && <span>COUNCIL {approval.council.toUpperCase()}</span>}
+                    {approval.taskId && (
+                      <>
+                        <Link
+                          href={`/console/tasks/${approval.taskId}`}
+                          className="link"
+                          style={{ fontSize: 10, letterSpacing: "0.12em" }}
+                        >
+                          TASK + TRACE →
+                        </Link>
+                        <Link
+                          href={`/api/anchors/verify?task_id=${approval.taskId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="link"
+                          style={{ fontSize: 10, letterSpacing: "0.12em" }}
+                        >
+                          VERIFY ON HCS →
+                        </Link>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
-  agents, approvals, auditEvents, capabilities, decisions, executions,
+  agents, approvals, auditEvents, capabilities, councils, decisions, executions,
   intents, networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
@@ -101,6 +101,7 @@ afterAll(async () => {
     await db().delete(agents).where(eq(agents.tenantId, t.id));
     await db().delete(tools).where(eq(tools.tenantId, t.id));
     await db().delete(policies).where(eq(policies.tenantId, t.id));
+    await db().delete(councils).where(eq(councils.tenantId, t.id));
     await db().delete(tenants).where(eq(tenants.id, t.id));
   }
   for (const key of ["agent:8472", "agent:lab-1"]) {

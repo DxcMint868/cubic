@@ -20,6 +20,10 @@ export interface Rule {
   min?: number;
   decision: DecisionType;
   reason: ReasonCode;
+  // Council multisig: the council name that must sign an escalation from this
+  // rule (absent = single resolver). Read at escalate time, never by evaluate
+  // — the decision stays purely deterministic; council only routes the approval.
+  council?: string;
 }
 
 const RISK_SCORE: Record<RiskClass, 10 | 40 | 70 | 90> = {
