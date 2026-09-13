@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import MacWindow from "@/components/MacWindow";
 import NetworkGraph from "@/components/network/NetworkGraph";
+import { REGIONS, SERVICES, inRegion, regionFor, serviceFor } from "@/components/network/topology";
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import {
@@ -74,10 +75,40 @@ export default function NetworkPage() {
   const stats = useApi("network-stats", getNetworkStats);
   const { events: live, connected, error: streamError } = useNetworkStream();
   const [selected, setSelected] = useState<string | null>(null);
+  const [region, setRegion] = useState<string>("global");
 
   const events = useMemo(
     () => mergeNetworkEvents(initial.data ?? [], live),
     [initial.data, live],
+  );
+
+  const regionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const seen = new Set<string>();
+    for (const event of events) {
+      if (seen.has(event.agent_pseudonym)) continue;
+      seen.add(event.agent_pseudonym);
+      const r = regionFor(event.agent_pseudonym);
+      counts.set(r, (counts.get(r) ?? 0) + 1);
+    }
+    return counts;
+  }, [events]);
+
+  const regionTabs = useMemo(
+    () =>
+      REGIONS.map((r) => ({
+        id: r.id,
+        label:
+          r.id === "global"
+            ? `GLOBAL · ${regionCounts.size ? [...regionCounts.values()].reduce((a, b) => a + b, 0) : 0}`
+            : `${r.label} · ${regionCounts.get(r.id) ?? 0}`,
+      })),
+    [regionCounts],
+  );
+
+  const visibleEvents = useMemo(
+    () => events.filter((event) => inRegion(event.agent_pseudonym, region)),
+    [events, region],
   );
 
   const statsReload = stats.reload;
@@ -95,7 +126,7 @@ export default function NetworkPage() {
       string,
       { pseudonym: string; category: string; count: number; last: NetworkEvent }
     >();
-    for (const event of events) {
+    for (const event of visibleEvents) {
       const current = map.get(event.agent_pseudonym);
       if (!current) {
         map.set(event.agent_pseudonym, {
@@ -111,7 +142,7 @@ export default function NetworkPage() {
       }
     }
     return [...map.values()].sort((a, b) => b.last.id - a.last.id);
-  }, [events]);
+  }, [visibleEvents]);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -167,9 +198,12 @@ export default function NetworkPage() {
             maxWidth: 680,
           }}
         >
-          Every cube is an agent pseudonym, grouped by its tool category. Pulses are real
+          Every cube on the left is an agent pseudonym. Pulses are real
           projected events from the gateway pipeline — decisions, capabilities, payments,
-          executions — stripped of tenant identity before they reach this surface.
+          executions — traveling agent → gateway → service, labeled with what
+          flowed and its verdict. Denied pulses die at the gateway and never
+          reach a service. The public surface never shows prompts, arguments,
+          resources, or tenant identity.
         </p>
         <p
           className="mono"
@@ -182,6 +216,8 @@ export default function NetworkPage() {
         >
           {connected ? "SSE LIVE — SUBSCRIBED" : streamError?.toUpperCase() ?? "SSE — CONNECTING"}
           {" · REAL EVENT PIPELINE — SYNTHETIC SWARM AGENTS INCLUDED (DEMO)"}
+          <br />
+          {"REGIONS — SYNTHETIC DEMO ASSIGNMENT · SERVICES — FIXED DEMO SET"}
         </p>
 
         <div
@@ -223,7 +259,14 @@ export default function NetworkPage() {
         </div>
       ) : (
         <div className="section-pad network-grid">
-          <MacWindow title={`LIVE TOPOLOGY — ${agents.length} AGENTS`}>
+          <MacWindow
+            tabs={regionTabs}
+            activeTab={region}
+            onTabChange={(id) => {
+              setRegion(id);
+              setSelected(null);
+            }}
+          >
             <div style={{ height: 520, position: "relative" }}>
               {initial.loading && events.length === 0 ? (
                 <div
@@ -252,7 +295,7 @@ export default function NetworkPage() {
                     />
                   ))}
                 </div>
-              ) : events.length === 0 ? (
+              ) : visibleEvents.length === 0 ? (
                 <div
                   style={{
                     position: "absolute",
@@ -272,11 +315,18 @@ export default function NetworkPage() {
                       textAlign: "center",
                     }}
                   >
-                    No live events yet — run the demo agent or the swarm.
+                    {events.length === 0
+                      ? "No live events yet — run the demo agent or the swarm."
+                      : "No agents in this region yet — try global."}
                   </p>
                 </div>
               ) : (
-                <NetworkGraph events={events} selected={selected} onSelect={setSelected} />
+                <NetworkGraph
+                  events={visibleEvents}
+                  selected={selected}
+                  onSelect={setSelected}
+                  emptyLabel="NO AGENTS IN THIS REGION — TRY GLOBAL"
+                />
               )}
             </div>
           </MacWindow>
@@ -320,8 +370,9 @@ export default function NetworkPage() {
                           color: "#5a5a5a",
                         }}
                       >
-                        CATEGORY {selectedAgent.category.toUpperCase()} · LAST SEEN{" "}
-                        {fmtAge(selectedAgent.last.created_at).toUpperCase()} AGO
+                        CATEGORY {selectedAgent.category.toUpperCase()} · REGION{" "}
+                        {(REGIONS.find((r) => r.id === regionFor(selectedAgent.pseudonym))?.label ?? "AP-SEA-1")}{" "}
+                        · LAST SEEN {fmtAge(selectedAgent.last.created_at).toUpperCase()} AGO
                       </div>
                     </div>
                   </div>
@@ -460,14 +511,14 @@ export default function NetworkPage() {
                       }}
                     >
                       <span style={{ color: "#5a5a5a" }}>{fmtTime(event.created_at)}</span>
-                      <span style={{ color: "#c9c9c9", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {event.event_type}
-                        <span style={{ color: "#3f3f3f" }}>
-                          {" · "}
-                          {event.agent_category} · #{event.agent_pseudonym.slice(0, 6)} ·{" "}
-                          {event.risk_class}
+                        <span style={{ color: "#c9c9c9", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {event.event_type}
+                          <span style={{ color: "#3f3f3f" }}>
+                            {" · "}
+                            {event.agent_category} · #{event.agent_pseudonym.slice(0, 6)} ·{" "}
+                            {event.risk_class} → {serviceFor(event)}
+                          </span>
                         </span>
-                      </span>
                       <OutcomeTag outcome={event.outcome} />
                     </div>
                   ))}
@@ -498,21 +549,6 @@ export default function NetworkPage() {
                     <span style={{ color: "#8a8a8a" }}>{item.label}</span>
                   </div>
                 ))}
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 10,
-                      height: 10,
-                      border: "1px solid #e8e8e8",
-                      transform: "rotate(45deg)",
-                      marginLeft: 1,
-                      marginRight: 1,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <span style={{ color: "#8a8a8a" }}>PAYMENT — TRANSACTION MARKER</span>
-                </div>
                 <div style={{ height: 1, background: "rgba(255,255,255,0.1)" }} />
                 {ACTION_LEGEND.map((item) => (
                   <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -531,6 +567,32 @@ export default function NetworkPage() {
                   </div>
                 ))}
                 <div style={{ height: 1, background: "rgba(255,255,255,0.1)" }} />
+                <span style={{ color: "#5a5a5a" }}>
+                  SERVICES — WHERE THE PULSE LANDS (FIXED DEMO SET)
+                </span>
+                {SERVICES.map((svc) => (
+                  <div key={svc.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 10,
+                        height: 10,
+                        border: "1px solid #6f6f6f",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ color: "#8a8a8a" }}>
+                      {svc.label} · {svc.hint.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+                <div style={{ height: 1, background: "rgba(255,255,255,0.1)" }} />
+                <span style={{ color: "#5a5a5a" }}>
+                  DENIED PULSES DIE AT THE GATEWAY — THEY NEVER REACH A SERVICE
+                </span>
+                <span style={{ color: "#5a5a5a" }}>
+                  REGIONS — SYNTHETIC DEMO ASSIGNMENT FROM PSEUDONYM
+                </span>
                 <span style={{ color: "#5a5a5a" }}>
                   COUNTERS — AGGREGATES OVER ALL PROJECTED EVENTS
                 </span>

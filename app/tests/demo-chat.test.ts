@@ -484,13 +484,20 @@ describe("plan-16 chat sessions land in tasks", () => {
 });
 
 describe("plan-16 parse.ts (pure, off-camera)", () => {
-  it("validates the 5 MCP shapes, rejects everything else", () => {
+  it("validates the 5 MCP shapes, passes other gateway tools through for policy to decide", () => {
     expect(validateParsed({ tool: "github.get_pull_request", arguments: { repo: "acme/backend", pr: 421 } }))
       .toEqual({ tool: "github.get_pull_request", arguments: { repo: "acme/backend", pr: 421 } });
-    expect(validateParsed({ tool: "github.delete_repo", arguments: { repo: "x" } }).tool).toBeNull();
+    // Disallowed-but-real tools pass through verbatim — the gateway (never the
+    // LLM) DENYs them with the enforced reason code (e.g. tool_not_allowed).
+    expect(validateParsed({ tool: "github.delete_repo", arguments: { repo: "x" } }))
+      .toEqual({ tool: "github.delete_repo", arguments: { repo: "x" } });
+    expect(validateParsed({ tool: "deploy.production", arguments: { repo: "acme/backend" } }))
+      .toEqual({ tool: "deploy.production", arguments: { repo: "acme/backend" } });
+    // MCP shapes stay strict; non-tool strings stay no-tool.
     expect(validateParsed({ tool: "github.read_file", arguments: { repo: "x" } }).tool).toBeNull();
     expect(validateParsed({ tool: null, arguments: {} }).tool).toBeNull();
     expect(validateParsed("slur or off-scope prose").tool).toBeNull();
+    expect(validateParsed({ tool: "nope", arguments: {} }).tool).toBeNull();
   });
 
   it("passes the model-drafted reply through, drops junk", () => {

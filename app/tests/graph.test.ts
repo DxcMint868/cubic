@@ -34,8 +34,10 @@ let graphTaskId: string;
 let graphTaskId2: string;
 let graphAgentId: string;
 let graphAgentId2: string;
-let staticAgentId: string; // agent:8472 — no erc8004_identity
+let staticAgentId: string; // agent:8472 — live owned identity since the registration wave
 let staticTaskId: string;
+let nakedAgentId: string; // agent:naked-probe — null identity, the Static-path probe
+let nakedTaskId: string;
 
 function stubClient(trust: AgentTrust, calls?: { count: number }): Agent0Client {
   return {
@@ -126,6 +128,20 @@ beforeAll(async () => {
   const [staticTask] = await db().select().from(tasks)
     .where(and(eq(tasks.tenantId, tenant.id), eq(tasks.agentId, staticAgent.id)));
   staticTaskId = staticTask.id;
+
+  // 8472 carries a live identity since the owned-registration wave, so the
+  // identity-less leg needs its own probe (null identity → Static, always).
+  const [nakedAgent] = await db().insert(agents).values({
+    tenantId: tenant.id, agentKey: "agent:naked-probe", name: "naked-probe",
+    environment: "test", status: "active", erc8004Identity: null,
+    declaredCapabilities: ["github.get_pull_request"],
+  }).returning();
+  nakedAgentId = nakedAgent.id;
+  const [nakedTask] = await db().insert(tasks).values({
+    tenantId: tenant.id, agentId: nakedAgent.id, title: "naked probe task",
+    budgetUsdCents: 50, status: "open",
+  }).returning();
+  nakedTaskId = nakedTask.id;
 }, 30000);
 
 afterAll(async () => {
@@ -310,8 +326,8 @@ describe("plan-07 graph context", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
       const noIdentity = await new AutoContextProvider().getFacts(
-        { taskId: staticTaskId, tool: "github.get_pull_request" },
-        { agentId: staticAgentId, toolRow: null },
+        { taskId: nakedTaskId, tool: "github.get_pull_request" },
+        { agentId: nakedAgentId, toolRow: null },
       );
       expect(noIdentity.agent_reputation).toBe(0.95); // erc8004_identity null → Static even with URL set
       expect(fetchMock).toHaveBeenCalledTimes(1);

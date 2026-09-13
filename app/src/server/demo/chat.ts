@@ -2,8 +2,10 @@
 //
 // POST /api/demo/chat accepts {message, template_id?, task_id?}. Template ids
 // resolve to EXACT {tool, arguments} with no LLM. Free text goes through
-// parse.ts (OpenRouter pinned; any failure → {tool: null} → display-only
-// no-tool state, gateway never called). Origin stays "agent".
+// parse.ts (OpenRouter pinned; the LLM drafts the closest {tool, arguments}
+// — including disallowed ones — and only true small-talk/failures yield
+// {tool: null} → display-only no-tool state, gateway never called). Origin
+// stays "agent".
 //
 // Execution goes through the identical orchestrator two ways: tools backed by
 // the 5 MCP tools run through a fresh-per-call MCP SDK Client (streamable

@@ -33,7 +33,7 @@ function DecisionBanner({ turn }: { turn: ChatTurn }) {
   if (!turn.decision) return null;
   const reason = turn.reasons[0]?.code ?? turn.matched_rule_id ?? "—";
   const word =
-    turn.decision === "allow" ? "Allow" : turn.decision === "deny" ? "Deny" : "Escalate";
+    turn.decision === "allow" ? "Allow" : turn.decision === "deny" ? "Deny — BLOCKED" : "Escalate";
   const label = `Decision: ${word} — ${reason}`;
   if (turn.decision === "allow") {
     return (
@@ -117,8 +117,13 @@ function TurnView({ turn }: { turn: ChatTurn }) {
           {turn.client_label.toUpperCase()}
         </p>
         {turn.reply && (
-          <div style={{ display: "flex", justifyContent: "flex-start" }}>
-            <div style={{ fontSize: 14, color: "#e8e8e8", maxWidth: "85%" }}>{turn.reply}</div>
+          <div style={{ display: "grid", gap: 4 }}>
+            <p className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a" }}>
+              LLM DRAFT
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-start" }}>
+              <div style={{ fontSize: 14, color: "#e8e8e8", maxWidth: "85%" }}>{turn.reply}</div>
+            </div>
           </div>
         )}
         {turn.intent && (
@@ -141,6 +146,11 @@ function TurnView({ turn }: { turn: ChatTurn }) {
           </pre>
         )}
         <DecisionBanner turn={turn} />
+        {turn.decision === "deny" && (
+          <p className="mono" style={{ fontSize: 10.5, letterSpacing: "0.1em", color: "#8a8a8a" }}>
+            GATEWAY INTERCEPTED — LLM DRAFTED, POLICY DENIED · NO CAPABILITY, NO EXECUTION
+          </p>
+        )}
         {turn.approval && (
           <p className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>
             {`approval ${turn.approval.id.slice(0, 8)} · provider ${
@@ -498,7 +508,7 @@ function describeFailure(err: unknown): string {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void sendFreeText(); }}
           placeholder={
-            providerOn ? "Ask the demo agent…" : "Free text disabled — no provider configured (templates only)"
+            providerOn ? "Ask anything — the LLM drafts, the gateway decides…" : "Free text disabled — no provider configured (templates only)"
           }
           disabled={!providerOn || busy || playing}
           className="mono"
@@ -525,7 +535,9 @@ function describeFailure(err: unknown): string {
         </button>
       </div>
       <p className="mono" style={{ marginTop: 16, fontSize: 10, letterSpacing: "0.1em", color: "#3a3a3a" }}>
-        DEMO SURFACE — MOCK LABELS INTACT · DEV PROVIDER LABELED · HCS LINKS REAL-OR-ABSENT
+        {providerOn
+          ? "FREE TEXT — LLM DRAFTS THE TOOL CALL · DETERMINISTIC POLICY ALLOWS / DENIES / ESCALATES · TRY “DELETE THE REPO”"
+          : "DEMO SURFACE — MOCK LABELS INTACT · DEV PROVIDER LABELED · HCS LINKS REAL-OR-ABSENT"}
       </p>
     </div>
   );

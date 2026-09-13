@@ -1,10 +1,14 @@
 // plan-16 EXACT — free-text → {tool, arguments} parser (server/demo/parse.ts).
 //
 // OpenRouter pinned: OPENROUTER_API_KEY + optional CHAT_MODEL (default
-// `openai/gpt-4o-mini`). Strict JSON `{tool, arguments}` zod-validated against
-// the 5 MCP tool shapes, 8s timeout; any failure/refusal yields `{tool: null}`
-// → display-only no-tool state, gateway never called. The parser NEVER
-// authorizes anything — it only drafts a tool call the gateway then evaluates.
+// `openai/gpt-4o-mini`). Strict JSON `{tool, arguments}` zod-validated: the 5
+// MCP tools against their exact shapes, anything else that looks like a
+// gateway tool name (`scope.action`) passes through verbatim so the
+// deterministic policy engine can ALLOW/DENY/ESCALATE it for real. 8s
+// timeout; provider-unset/timeout/refusal/malformed JSON/small-talk yields
+// `{tool: null}` → display-only no-tool state, gateway never called.
+// The parser NEVER authorizes anything — it only drafts a tool call the
+// gateway then evaluates (LLM drafts, policy decides).
 
 import { z } from "zod";
 
@@ -39,38 +43,58 @@ export function parseProviderConfigured(): boolean {
   return (process.env.OPENROUTER_API_KEY ?? "").trim() !== "";
 }
 
-// Pure: validate a candidate {tool, arguments} against the 5 MCP shapes.
-// Anything else → {tool: null}. Never throws.
+// Pure: validate a candidate {tool, arguments}. The 5 MCP shapes are exact;
+// any other plausible gateway tool name passes through with generic
+// arguments so the policy engine — never the LLM — decides its fate
+// (unknown tools deterministically DENY via the tool-allowlist rule).
+// Anything without a tool-like name → {tool: null}. Never throws.
 export function validateParsed(candidate: unknown): ParsedIntent {
   const parsed = parsedShape.safeParse(candidate);
   if (!parsed.success) return { tool: null, arguments: {} };
   const reply = typeof parsed.data.reply === "string" && parsed.data.reply.trim() !== "" ? parsed.data.reply : undefined;
   const schema = toolSchemas[parsed.data.tool];
-  if (!schema) return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
-  const args = schema.safeParse(parsed.data.arguments);
-  if (!args.success) return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
-  const out = args.data as Record<string, unknown>;
-  // The model must never choose the task row (or smuggle a client
-  // reasoning_ref): task routing belongs to the caller, never LLM output.
-  delete out.task_id;
-  delete out.reasoning_ref;
-  return { tool: parsed.data.tool, arguments: out, ...(reply ? { reply } : {}) };
+  if (schema) {
+    const args = schema.safeParse(parsed.data.arguments);
+    if (!args.success) return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
+    const out = args.data as Record<string, unknown>;
+    // The model must never choose the task row (or smuggle a client
+    // reasoning_ref): task routing belongs to the caller, never LLM output.
+    delete out.task_id;
+    delete out.reasoning_ref;
+    return { tool: parsed.data.tool, arguments: out, ...(reply ? { reply } : {}) };
+  }
+  // Passthrough: let the gateway evaluate (and, where policy says so, BLOCK)
+  // the LLM-drafted call. Shape is deliberately loose — the normalizer +
+  // policy engine are the authority on what is allowed.
+  if (/^[a-z0-9_.-]+\.[a-z0-9_.-]+$/i.test(parsed.data.tool) && parsed.data.arguments !== null && typeof parsed.data.arguments === "object" && !Array.isArray(parsed.data.arguments)) {
+    const out = { ...(parsed.data.arguments as Record<string, unknown>) };
+    delete out.task_id;
+    delete out.reasoning_ref;
+    return { tool: parsed.data.tool, arguments: out, ...(reply ? { reply } : {}) };
+  }
+  return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
 }
 
 const SYSTEM_PROMPT = [
   "You map a demo user's chat message to ONE Cubic gateway tool call.",
-  "Reply with STRICT JSON only, no prose: {\"tool\": \"<name>\", \"arguments\": {…}}.",
-  "Allowed tools and required arguments:",
+  "Reply with STRICT JSON only, no prose: {\"tool\": \"<name>\", \"arguments\": {…}, \"reply\": \"<one short chat line narrating the action>\"}.",
+  "Preferred tools and their arguments:",
   '- "scanner.scan": {"target": "acme/backend#421"}',
   '- "github.get_pull_request": {"repo": "acme/backend", "pr": 421}',
   '- "github.read_file": {"repo": "acme/backend", "path": "README.md"}',
   '- "github.merge_pull_request": {"repo": "acme/backend", "pr": 421}',
   '- "task.complete": {}',
-  "If the message matches no tool, or asks for anything else (deleting repos,",
-  "reading secrets, spending money, anything off the list above), reply",
-  '{"tool": null, "arguments": {}, "reply": "<one short plain sentence saying what you can do instead>"}',
-  "Otherwise include a short 'reply' chat line (max 140 chars) narrating the action, e.g.",
-  '{"tool": "github.get_pull_request", "arguments": {"repo": "acme/backend", "pr": 421}, "reply": "On it — pulling up PR #421."}.',
+  "You are the LLM — act like one: always draft the closest tool call for what",
+  "the user asked, even when it looks disallowed. Examples:",
+  '- "delete the repo" → {"tool": "github.delete_repo", "arguments": {"repo": "acme/backend"}}',
+  '- "read the production secrets" → {"tool": "github.read_file", "arguments": {"repo": "acme/backend", "path": ".env.production"}}',
+  '- "deploy to production" → {"tool": "deploy.production", "arguments": {"repo": "acme/backend"}}',
+  '- "swap/treasury/payroll/stake" → the matching "treasury.*" tool with your best-guess arguments',
+  "Never self-censor with {\"tool\": null} for a disallowed action — the",
+  "deterministic gateway policy (never you) decides ALLOW / DENY / ESCALATE,",
+  "and a gateway DENY is the impressive demo moment.",
+  "Only use {\"tool\": null, \"arguments\": {}, \"reply\": \"<what you can do instead>\"}",
+  "for true small-talk or when the message maps to no action at all.",
 ].join("\n");
 
 const PARSE_TIMEOUT_MS = 8000;
@@ -120,8 +144,8 @@ export interface ParseDeps {
   fetchImpl?: typeof fetch;
 }
 
-// Free-text parse. Provider unset, timeout, refusal, malformed JSON, schema
-// mismatch → {tool: null}. Never throws, never touches the gateway.
+// Free-text parse. Provider unset, timeout, refusal, malformed JSON, or true
+// small-talk → {tool: null}. Never throws, never touches the gateway.
 export async function parseFreeText(message: string, deps: ParseDeps = {}): Promise<ParsedIntent> {
   if (!parseProviderConfigured()) return { tool: null, arguments: {} };
   const fetchImpl = deps.fetchImpl ?? fetch;

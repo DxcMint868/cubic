@@ -1,9 +1,26 @@
 # Cubic demo — video runbook (plan-16)
 
-The take is a two-tab browser window: **chat left** (`/demo/chat`), **console
-right** (`/console/tasks`). Press **PLAY** in chat and narrate — the scenario
-runs hands-free beat-by-beat and lands on `/network`. Everything on screen is
-the real pipeline: verbatim intents, real reason codes, queryable traces.
+The take is a three-surface window: **chat left** (`/demo/chat`, the
+executor), **approvals right** (`/console/approvals`, the approver — new
+requests land live, no refresh), and a **third tab with the live chain
+surfaces** (Graph playground + QuickNode agent page + Basescan). Press
+**PLAY** in chat and narrate — the scenario runs hands-free beat-by-beat and
+lands on `/network`. Everything on screen is the real pipeline: verbatim
+intents, real reason codes, queryable traces, real onchain records.
+
+## Onchain roster (all ours, all live on Base Sepolia testnet)
+
+| Agent (console name) | ERC-8004 identity | Feedback |
+|---|---|---|
+| deploy-agent | `84532:9223` | 95/100 |
+| treasury-agent | `84532:9224` | 90/100 |
+| reader-agent | `84532:9225` | 92/100 |
+| low-rep-research-agent | `8453:74108` (borrowed mainnet, real negative) | ≈0.10 |
+
+Re-register / re-feedback any time (throwaway testnet keys only):
+`OWNER_KEY=… CLIENT_KEY=… pnpm --filter app exec tsx scripts/register-agent-8004.ts`,
+then pin the printed ids in `seed.ts`. Scores stay ≥ 0.80 (except lab-1) so
+no beat changes — only the source of the number does.
 
 ## 30-second linear flow (shoot this first)
 
@@ -12,7 +29,8 @@ the real pipeline: verbatim intents, real reason codes, queryable traces.
 | 0 | chat | Beat 0 title card | "One agent. One gateway. Every tool call interrogated — allow, deny, or escalate." |
 | 1 | chat | read PR #421 → ALLOW | "The agent reads PR #421. Low risk — the gateway allows it." |
 | 2 | chat | scan → 402 discovery receipt | "It needs a security scan. The service answers 402 — twenty-five cents on Hedera — and the gateway holds the capability until the budget policy says yes." |
-| 3 | chat + console | merge → ESCALATE, approve in console | "The scan is clean, so the agent asks to merge. High risk — the gateway escalates, and a human approves in the console." |
+| 3 | chat + approvals | merge → ESCALATE, sign in console | "The scan is clean, so the agent asks to merge. High risk — watch the approver tab: the request lands live, the human signs with their wallet, and the signature is sealed into the approval's fingerprint." |
+| 3b | third tab | playground + agent page | "Same agent, same score — onchain, in the subgraph, right now. Not our database: theirs." |
 | 4 | chat | injected `.env` read → DENY | "Then the attack: injected instructions tell the agent to read production secrets. The gateway denies it — no capability, no execution." |
 | 5 | chat | over-budget scan → DENY | "It tries to overspend its task budget next. Same answer — denied, before any money moves." |
 | 6 | — | Play lands on `/network` | "And every one of those decisions is already live on the network." |
@@ -47,8 +65,19 @@ their traces are opened in the console tab.
       trace shows fingerprints with no topic link (anchor-disabled — the UI
       says so honestly). Topic-explorer links are real-or-absent, never
       fabricated
-- [ ] `LEDGER_PROVIDER` unset (= `dev`): approvals resolve via the resolve
-      route, narrated as the stand-in (see Beat 5)
+- [ ] Subgraph override set: `AGENT0_SUBGRAPH_URL` = the Base Sepolia Agent0
+      endpoint in `app/.env.local` (our fleet is `84532:*`; lab-1's mainnet
+      identity resolves through the built-in mainnet fallback). Without it,
+      owned agents read the mainnet deployment and miss → neutral fallback.
+- [ ] Third tab ready: Graph playground with the agent query for
+      `84532:9223` + the QuickNode agent page
+      (`erc-8004.quicknode.com/agents/base-sepolia/9223`) + a Basescan tab.
+      Same IDs, same scores as our console — that sameness IS the beat.
+- [ ] Approver wallet ready: a browser wallet (any test account) for the
+      SIGN & APPROVE popup. No wallet → unsigned dev resolve, labeled
+      stand-in — decide before shooting.
+- [ ] `LEDGER_PROVIDER` unset (= `dev`): unsigned approvals resolve via the
+      resolve route, narrated as the stand-in (see Beat 5)
 - [ ] Bypass flags clear: the preflight aborts unless `X402_DEV_BYPASS`
       and `X402_SIMULATE_FAILURE` are unset or `"0"` — a real take never runs
       with them on (don't be surprised by the abort; unset them and re-run)
