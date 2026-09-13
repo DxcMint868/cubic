@@ -43,7 +43,10 @@ export function validateParsed(candidate: unknown): ParsedIntent {
   const args = schema.safeParse(parsed.data.arguments);
   if (!args.success) return { tool: null, arguments: {} };
   const out = args.data as Record<string, unknown>;
-  // task_id passthrough is allowed (uuid); anything else rides as-is.
+  // The model must never choose the task row (or smuggle a client
+  // reasoning_ref): task routing belongs to the caller, never LLM output.
+  delete out.task_id;
+  delete out.reasoning_ref;
   return { tool: parsed.data.tool, arguments: out };
 }
 

@@ -12,18 +12,19 @@
 // Both funnel into runToolCall, so audit chains are transport-independent.
 
 import { createHash } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { config } from "../config";
 import { db } from "../db/client";
-import { agents, intents, policies, tasks, tenants, tools } from "../db/schema";
+import { agents, auditEvents, decisions, intents, policies, tasks, tenants, tools } from "../db/schema";
 import type { NormalizedIntent } from "../domain";
 import { runToolCall, type ToolCallData } from "../gateway/orchestrator";
 import { consumeCapability } from "../capability/verify";
 import type { Rule } from "../gateway/policy/engine";
 import { CHAT_TEMPLATES, getTemplate, type ChatTemplate } from "./templates";
 import { chatModel, parseFreeText, parseProviderConfigured } from "./parse";
+import { ANCHORED_TYPES, anchorTopicId, fingerprint, topicUrl } from "../anchors/hcs";
 
 export { CHAT_TEMPLATES };
 
@@ -71,6 +72,10 @@ export interface ChatTurn {
   lines: { capability?: string; execution?: string; payment?: string };
   receipt: { amount_usd_cents: number; network: "hedera"; ref: string; ref_kind: "settlement" | "challenge" } | null;
   rejections: Array<{ step: string; reason: string; capability_id: string }>;
+  // HCS anchors for THIS turn's chain (fence-clean UI surface for the plan's
+  // "UI renders fingerprint + topic-explorer link" clause — computed server-
+  // side so the client never imports node:crypto).
+  anchors: Array<{ event_type: string; fingerprint: string; topic_id: string | null; topic_url: string | null }>;
   trace_url: string | null;
   network_url: string;
   provider: { configured: boolean; model: string };
@@ -80,10 +85,10 @@ export interface ChatTurn {
 
 // -- MCP client ---------------------------------------------------------------
 
-let mcpToolsCache: string[] | null = null;
+let mcpToolsCache = new Map<string, string[]>();
 
 export function clearMcpCacheForTests(): void {
-  mcpToolsCache = null;
+  mcpToolsCache = new Map();
 }
 
 function mcpUrl(baseUrl: string): URL {
@@ -91,7 +96,8 @@ function mcpUrl(baseUrl: string): URL {
 }
 
 async function listMcpTools(baseUrl: string): Promise<string[]> {
-  if (mcpToolsCache) return mcpToolsCache;
+  const cached = mcpToolsCache.get(baseUrl);
+  if (cached) return cached;
   const client = new Client({ name: "cubic-demo-chat", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(mcpUrl(baseUrl), {
     requestInit: { headers: { "x-cubic-agent": AGENT_KEY } },
@@ -99,8 +105,9 @@ async function listMcpTools(baseUrl: string): Promise<string[]> {
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    mcpToolsCache = listed.tools.map((t) => t.name);
-    return mcpToolsCache;
+    const names = listed.tools.map((t) => t.name);
+    mcpToolsCache.set(baseUrl, names);
+    return names;
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -168,7 +175,9 @@ async function ensureTreasuryFixtures(tenantId: string): Promise<void> {
   const [policy] = await db()
     .select()
     .from(policies)
-    .where(and(eq(policies.tenantId, tenantId), eq(policies.name, "default-v1")));
+    .where(and(eq(policies.tenantId, tenantId), eq(policies.name, "default-v1")))
+    .orderBy(desc(policies.version))
+    .limit(1);
   if (!policy) throw new Error("demo chat: default-v1 missing");
   const rules = [...(policy.rules as Rule[])];
   const at = rules.findIndex((r) => r.id === "tool-allowlist");
@@ -184,6 +193,45 @@ async function ensureTreasuryFixtures(tenantId: string): Promise<void> {
 
 function shortRef(value: string): string {
   return value.slice(0, 8);
+}
+
+// Per-turn HCS anchors: allowlisted audit events belonging to this turn's
+// chain (matched by intent/decision/capability/approval/execution/payment
+// id), each with the display-identical fingerprint + real-or-absent topic link.
+async function turnAnchors(
+  taskId: string | null,
+  data: ToolCallData,
+): Promise<ChatTurn["anchors"]> {
+  if (!taskId) return [];
+  const ids = new Set<string>([data.intent_id]);
+  const [decRow] = await db().select().from(decisions).where(eq(decisions.intentId, data.intent_id));
+  if (decRow) ids.add(decRow.id);
+  if (data.approval_id) ids.add(data.approval_id);
+  if (data.capability) ids.add(data.capability.capability_id);
+  if (data.execution) ids.add(data.execution.execution_id);
+  if (data.payment) ids.add(data.payment.payment_id);
+  const rows = await db()
+    .select()
+    .from(auditEvents)
+    .where(eq(auditEvents.taskId, taskId))
+    .orderBy(asc(auditEvents.id));
+  const topic_id = anchorTopicId();
+  const out: ChatTurn["anchors"] = [];
+  for (const row of rows) {
+    if (!ANCHORED_TYPES.has(row.eventType)) continue;
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const related = ["intent_id", "decision_id", "capability_id", "approval_id", "execution_id", "payment_id"].some(
+      (key) => typeof payload[key] === "string" && ids.has(payload[key] as string),
+    );
+    if (!related) continue;
+    out.push({
+      event_type: row.eventType,
+      fingerprint: fingerprint({ event_type: row.eventType, payload }),
+      topic_id,
+      topic_url: topic_id ? topicUrl(topic_id) : null,
+    });
+  }
+  return out;
 }
 
 function buildTurn(base: Partial<ChatTurn> & { chat_text: string; task_id: string | null }): ChatTurn {
@@ -209,6 +257,7 @@ function buildTurn(base: Partial<ChatTurn> & { chat_text: string; task_id: strin
     lines: {},
     receipt: null,
     rejections: [],
+    anchors: [],
     trace_url: null,
     network_url: "/network",
     provider: { configured: parseProviderConfigured(), model: chatModel() },
@@ -299,6 +348,7 @@ async function hydrateTurn(
     payment_required: data.payment_required,
     lines,
     receipt,
+    anchors: await turnAnchors(taskId, data),
     trace_url: taskId ? `/console/tasks/${taskId}` : null,
     tools: { connected: toolsConnected },
   });
@@ -339,7 +389,9 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
     throw new Error("chat requires template_id or a non-empty message");
   }
 
-  // Display-only no-tool state: plain words, gateway never called.
+  // Display-only no-tool state: plain words, gateway never called. trace_url
+  // stays null unconditionally — a turn with zero gateway rows must never
+  // link to a trace full of other turns' Decisions.
   if (kind === "no-tool" || tool === null) {
     return buildTurn({
       kind: "no-tool",
@@ -348,7 +400,7 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
       task_id: input.task_id ?? null,
       tool: null,
       arguments: {},
-      trace_url: input.task_id ? `/console/tasks/${input.task_id}` : null,
+      trace_url: null,
       tools: { connected: toolsConnected },
       no_tool_message: NO_TOOL_MESSAGE,
     });

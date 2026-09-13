@@ -206,11 +206,14 @@ export function getTemplate(id: string): ChatTemplate | null {
 export interface PlayBeat {
   template_id: string | null;
   cue: string;
+  /** Title-card beats render as cards; plain beats render as voiceover cues. */
+  card?: boolean;
 }
 
 export const PLAY_BEATS: PlayBeat[] = [
   {
     template_id: null,
+    card: true,
     cue: "One agent. One gateway. Every tool call interrogated — allow, deny, or escalate.",
   },
   {
@@ -232,5 +235,9 @@ export const PLAY_BEATS: PlayBeat[] = [
   {
     template_id: "attack-overbudget",
     cue: "It tries to overspend its task budget next. Same answer — denied, before any money moves.",
+  },
+  {
+    template_id: null,
+    cue: "And every one of those decisions is already live on the network.",
   },
 ];

@@ -409,6 +409,7 @@ export interface ChatTurn {
   lines: { capability?: string; execution?: string; payment?: string };
   receipt: { amount_usd_cents: number; network: string; ref: string; ref_kind: "settlement" | "challenge" } | null;
   rejections: Array<{ step: string; reason: string; capability_id: string }>;
+  anchors: Array<{ event_type: string; fingerprint: string; topic_id: string | null; topic_url: string | null }>;
   trace_url: string | null;
   network_url: string;
   provider: { configured: boolean; model: string };

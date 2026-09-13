@@ -298,7 +298,9 @@ describe("plan-02 gateway", () => {
 
     expect(body.data.events.length).toBeGreaterThan(0);
     for (const event of body.data.events) {
-      expect(Object.keys(event).sort()).toEqual(["event_type", "occurred_at", "payload"]);
+      // plan-16: trace events now carry the derived HCS anchor
+      // {fingerprint, topic_id} (computed, never stored).
+      expect(Object.keys(event).sort()).toEqual(["anchor", "event_type", "occurred_at", "payload"]);
       expect(typeof event.occurred_at).toBe("string");
     }
     expect(body.data.events[0].event_type).toBe("intent.created");

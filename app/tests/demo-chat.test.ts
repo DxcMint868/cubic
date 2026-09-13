@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
@@ -104,6 +105,7 @@ interface ChatTurnBody {
   lines: Record<string, string>;
   receipt: { amount_usd_cents: number; network: string; ref: string; ref_kind: string } | null;
   rejections: Array<{ step: string; reason: string; capability_id: string }>;
+  anchors: Array<{ event_type: string; fingerprint: string; topic_id: string | null; topic_url: string | null }>;
   trace_url: string | null;
   network_url: string;
   provider: { configured: boolean; model: string };
@@ -237,7 +239,12 @@ describe("plan-16 Play beat order", () => {
       "deploy-merge",
       "attack-env",
       "attack-overbudget",
+      null,
     ]);
+    // Literal narration cues: every Play cue must appear verbatim in the
+    // video runbook (docs/demo.md) — the plan's "literal" clause, asserted.
+    const demoMd = await readFile(new URL("../../docs/demo.md", import.meta.url), "utf8");
+    for (const beat of PLAY_BEATS) expect(demoMd).toContain(beat.cue);
     for (const beat of PLAY_BEATS) {
       if (!beat.template_id) continue;
       const template = getTemplate(beat.template_id)!;
@@ -332,12 +339,14 @@ describe("plan-16 adversarial display + no-provider templates-only", () => {
     expect(env.json.data!.turn.reasons[0]?.code).toBe("secret_resource");
     expect(env.json.data!.turn.capability).toBeNull();
     expect(env.json.data!.turn.execution).toBeNull();
+    expect(env.json.data!.turn.payment).toBeNull();
 
     const over = await chat({ template_id: "attack-overbudget" });
     expect(over.json.data!.turn.decision).toBe("deny");
     expect(over.json.data!.turn.reasons[0]?.code).toBe("budget_exceeded");
     expect(over.json.data!.turn.payment).toBeNull();
     expect(over.json.data!.turn.execution).toBeNull();
+    expect(over.json.data!.turn.capability).toBeNull();
   }, 120000);
 
   it("no-tool template never touches the gateway", async () => {
@@ -352,6 +361,9 @@ describe("plan-16 adversarial display + no-provider templates-only", () => {
     expect(turn.intent).toBeNull();
     expect(turn.decision).toBeNull();
     expect(turn.no_tool_message).toBe(NO_TOOL_MESSAGE);
+    // A turn with zero gateway rows links nowhere — never to a trace of
+    // other turns' Decisions.
+    expect(turn.trace_url).toBeNull();
     const countAfter = (
       await db().select().from(intents).where(eq(intents.agentId, (await db().select().from(agents).where(and(eq(agents.tenantId, tenantId), eq(agents.agentKey, "agent:8472"))))[0].id))
     ).length;
@@ -381,6 +393,19 @@ describe("plan-16 chat-vs-ingest event identity", () => {
     expect(json.ok).toBe(true);
     const turn = json.data!.turn;
     expect(turn.transport).toBe("mcp");
+
+    // The turn renders its own HCS anchors: the allowlisted chain events with
+    // display-identical fingerprints, topic real-or-absent.
+    expect(turn.anchors.map((a) => a.event_type)).toEqual([
+      "policy.evaluated",
+      "capability.issued",
+      "capability.consumed",
+    ]);
+    for (const anchor of turn.anchors) {
+      expect(anchor.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+      expect(anchor.topic_id).toBeNull();
+      expect(anchor.topic_url).toBeNull();
+    }
 
     const direct = await runToolCall({
       task_id: turn.task_id!,

@@ -145,7 +145,15 @@ export function anchorEvent(input: AnchorInput): void {
       return;
     }
     const fp = fingerprint(input);
-    const run = (submitter ? submitter.submit(fp) : defaultSubmit(fp)).then(
+    // A never-settling submitter must not pin `pending` forever (flushAnchors
+    // is test-only): race the submit against a warn-and-drop timeout.
+    const attempt = (submitter ? submitter.submit(fp) : defaultSubmit(fp));
+    const bounded = Promise.race([
+      attempt,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("HCS anchor submit timed out")), 30_000),
+      ),
+    ]).then(
       () => undefined,
       (err: unknown) => {
         log.warn("HCS anchor submit failed (warn-only)", {
@@ -154,6 +162,7 @@ export function anchorEvent(input: AnchorInput): void {
         });
       },
     );
+    const run = bounded;
     pending.add(run);
     void run.finally(() => {
       pending.delete(run);

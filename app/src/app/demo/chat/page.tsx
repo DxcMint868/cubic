@@ -186,6 +186,22 @@ function TurnView({ turn }: { turn: ChatTurn }) {
             {`capability ${r.step} → rejected (${r.reason})`}
           </p>
         ))}
+        {turn.anchors.length > 0 && (
+          <div style={{ display: "grid", gap: 4 }}>
+            {turn.anchors.map((a) => (
+              <p key={`${a.event_type}-${a.fingerprint}`} className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>
+                {`HCS anchor — ${a.event_type} · ${a.fingerprint.slice(0, 8)}`}
+                {a.topic_url ? (
+                  <a href={a.topic_url} target="_blank" rel="noreferrer" className="link" style={{ marginLeft: 8 }}>
+                    {a.topic_id} →
+                  </a>
+                ) : (
+                  <span style={{ marginLeft: 8, color: "#3a3a3a" }}>(anchoring disabled — no topic)</span>
+                )}
+              </p>
+            ))}
+          </div>
+        )}
         <p className="mono" style={{ fontSize: 10.5, letterSpacing: "0.1em" }}>
           {turn.trace_url && (
             <Link href={turn.trace_url} className="link" style={{ marginRight: 18 }}>
@@ -202,6 +218,20 @@ function TurnView({ turn }: { turn: ChatTurn }) {
 }
 
 const PLAY_STEP_MS = 1600;
+const TURN_TIMEOUT_MS = 30000;
+
+// A hung request must surface into `failed`, never wedge busy/playing forever.
+async function withTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("chat turn timed out after 30s")), TURN_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export default function DemoChat() {
   const router = useRouter();
@@ -226,7 +256,7 @@ export default function DemoChat() {
     setBusy(true);
     setFailed(null);
     try {
-      const res = await postChatTurn({ template_id });
+      const res = await withTimeout(postChatTurn({ template_id }));
       setItems((prev) => [...prev, { kind: "turn", turn: { ...res.turn, chat_text } }]);
     } catch (err) {
       setFailed(err instanceof Error ? err.message : String(err));
@@ -242,7 +272,7 @@ export default function DemoChat() {
     setBusy(true);
     setFailed(null);
     try {
-      const res = await postChatTurn({ message });
+      const res = await withTimeout(postChatTurn({ message }));
       setItems((prev) => [...prev, { kind: "turn", turn: res.turn }]);
     } catch (err) {
       setFailed(err instanceof Error ? err.message : String(err));
@@ -260,10 +290,10 @@ export default function DemoChat() {
       for (const beat of PLAY_BEATS) {
         if (playAbort.current) break;
         if (beat.template_id === null) {
-          setItems((prev) => [...prev, { kind: "card", cue: beat.cue }]);
+          setItems((prev) => [...prev, beat.card ? { kind: "card", cue: beat.cue } : { kind: "cue", cue: beat.cue }]);
         } else {
           setItems((prev) => [...prev, { kind: "cue", cue: beat.cue }]);
-          const res = await postChatTurn({ template_id: beat.template_id });
+          const res = await withTimeout(postChatTurn({ template_id: beat.template_id }));
           const label = bootstrap?.templates.find((t) => t.id === beat.template_id)?.chat_text ?? beat.template_id;
           setItems((prev) => [...prev, { kind: "turn", turn: { ...res.turn, chat_text: label } }]);
         }
@@ -289,7 +319,7 @@ export default function DemoChat() {
         Watch the gateway decide.
       </h1>
       <p style={{ marginTop: 12, fontSize: 16, color: "#8a8a8a", maxWidth: 620 }}>
-        Each scenario sends one tool call through the real pipeline. Every turn shows the verbatim
+        Each scenario runs through the real pipeline. Every turn shows the verbatim
         intent, the real decision with its reason code, and the trace.
       </p>
 
@@ -382,7 +412,7 @@ export default function DemoChat() {
               style={{ background: "transparent", cursor: "pointer" }}
               title={t.chat_text}
             >
-              {t.label.replace(/^Scenario: |^Camera beat: /, "").toUpperCase()}
+              {t.label.toUpperCase()}
             </button>
           ))}
         </div>
