@@ -370,3 +370,79 @@ export function useNetworkStream(): {
 
   return { events, connected, error };
 }
+
+// plan-16 — demo chat fetchers (append-only).
+
+export interface ChatTemplateSummary {
+  id: string;
+  label: string;
+  chat_text: string;
+}
+
+export interface ChatTurn {
+  kind: "tool" | "no-tool" | "lifecycle";
+  template_id: string | null;
+  chat_text: string;
+  client_label: string;
+  task_id: string | null;
+  tool: string | null;
+  arguments: Record<string, unknown>;
+  transport: "mcp" | "gateway" | null;
+  intent: Record<string, unknown> | null;
+  decision: "allow" | "deny" | "escalate" | null;
+  matched_policy: string | null;
+  matched_rule_id: string | null;
+  reasons: Array<{ code: string; detail?: string }>;
+  risk_score: number | null;
+  approval: { id: string; provider: string; status: string } | null;
+  approval_outcome: "approved" | "rejected" | null;
+  capability: {
+    capability_id: string;
+    action: string;
+    resource: string;
+    nonce: string;
+    expires_at: string;
+  } | null;
+  execution: { execution_id: string; status: string; result_summary: string | null } | null;
+  payment: { payment_id: string; status: string; settlement_ref: string | null; error_code: string | null } | null;
+  payment_required: { price_usd_cents: number; challenge: unknown } | null;
+  lines: { capability?: string; execution?: string; payment?: string };
+  receipt: { amount_usd_cents: number; network: string; ref: string; ref_kind: "settlement" | "challenge" } | null;
+  rejections: Array<{ step: string; reason: string; capability_id: string }>;
+  trace_url: string | null;
+  network_url: string;
+  provider: { configured: boolean; model: string };
+  tools: { connected: number | null };
+  no_tool_message: string | null;
+}
+
+export interface ChatBootstrap {
+  templates: ChatTemplateSummary[];
+  provider: { configured: boolean; model: string };
+  tools: { connected: number | null };
+  client_label: string;
+}
+
+export interface ChatResponse {
+  intent: Record<string, unknown> | null;
+  decision: "allow" | "deny" | "escalate" | null;
+  trace_url: string | null;
+  network_url: string;
+  turn: ChatTurn;
+}
+
+export function getChatBootstrap(): Promise<ChatBootstrap> {
+  return request<ChatBootstrap>("/api/demo/chat");
+}
+
+export function postChatTurn(input: {
+  message?: string;
+  template_id?: string;
+  task_id?: string;
+}): Promise<ChatResponse> {
+  return request<ChatResponse>("/api/demo/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
