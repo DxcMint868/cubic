@@ -17,6 +17,7 @@ const schema = z.object({
   LEDGER_WALLET_CLI_PATH: z.string().min(1).optional(),
   HEDERA_OPERATOR_ID: z.string().min(1).optional(),
   HEDERA_OPERATOR_KEY: z.string().min(1).optional(),
+  APPROVER_PRIVATE_KEYS: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof schema>;

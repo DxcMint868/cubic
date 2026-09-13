@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { eq, count } from "drizzle-orm";
 import { db } from "../src/server/db/client";
-import { tenants, agents, tasks, auditEvents, networkEvents } from "../src/server/db/schema";
+import { tenants, agents, tasks, auditEvents, networkEvents, councils } from "../src/server/db/schema";
 import { seed } from "../src/server/demo/seed";
 
 const pseudonym = (agentKey: string) =>
@@ -65,6 +65,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db().delete(auditEvents).where(eq(auditEvents.agentId, foreignAgentId));
   await db().delete(agents).where(eq(agents.id, foreignAgentId));
+  await db().delete(councils).where(eq(councils.tenantId, foreignTenantId));
   await db().delete(tenants).where(eq(tenants.id, foreignTenantId));
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, FOREIGN_PSEUDO));
 
@@ -87,12 +88,12 @@ describe("seed", () => {
     await seed();
     const afterDemo = await demoCounts();
 
-    expect(result1.agents).toBe(2); // plan-07: agent:8472 + agent:lab-1 (low-rep fixture)
+    expect(result1.agents).toBe(4); // agent:8472 + agent:lab-1 + agent:treasury + agent:reader
     expect(result1.tools).toBe(6);
     expect(result1.policies).toBe(3);
     expect(result1.tasks).toBe(1);
     expect(afterDemo).toEqual(mid);
-    expect(afterDemo.agents).toBe(2);
+    expect(afterDemo.agents).toBe(4);
 
     const afterForeign = await foreignRows();
     expect(afterForeign.agentRows).toEqual(beforeForeign.agentRows);

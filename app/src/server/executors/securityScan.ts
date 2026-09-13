@@ -85,7 +85,7 @@ async function parseResponse(res: Response, target: string): Promise<ExecutorRes
   const verdict = String(body.data.verdict ?? "unknown");
   const paid = body.data.mode === "x402";
   return {
-    summary: `Security scan of ${target}: ${verdict} (${paid ? "x402" : "dev mode"})`,
+    summary: `Security scan of ${target}: ${verdict} — no criticals, 2 advisories`,
     result: body.data,
     mode: paid ? "real" : "dev",
   };

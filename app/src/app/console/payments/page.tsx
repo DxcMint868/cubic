@@ -12,6 +12,7 @@ import {
   th,
 } from "@/components/ConsoleBits";
 import { derivePayments, fmtDateTime, shortId, usd } from "@/components/console/derive";
+import { hashscanUrl } from "@/components/console/TraceView";
 import { getAuditEventsPaged, useApi } from "@/lib/api";
 
 function StatusTag({ status }: { status: string }) {
@@ -162,7 +163,18 @@ export default function ConsolePayments() {
                         )}
                       </td>
                       <td style={{ ...td, fontSize: 11, maxWidth: 220, wordBreak: "break-word" }}>
-                        {payment.settlementRef ?? payment.errorCode ?? "—"}
+                        {payment.settlementRef ? (
+                          <a
+                            href={hashscanUrl(payment.settlementRef)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="link"
+                          >
+                            {payment.settlementRef}
+                          </a>
+                        ) : (
+                          payment.errorCode ?? "—"
+                        )}
                       </td>
                       <td style={td}>
                         <StatusTag status={payment.status} />

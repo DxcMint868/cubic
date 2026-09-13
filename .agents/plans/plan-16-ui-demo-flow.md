@@ -36,13 +36,13 @@ plans 05–11 merged. **Read `DESIGN.md` FIRST** (mandatory for all UI work): mo
 
 ## Acceptance criteria
 
-- [ ] Template click → full chain visible <3s with verbatim intent + real reason + trace link.
-- [ ] Adversarial camera beats → real-DENY banners, zero executions; no-tool state never photographs as a Decision.
-- [ ] Play mode runs a scenario hands-free end to end, ending on `/network`.
-- [ ] Free text without provider → honest disabled state; with provider → parsed or cleanly declined.
-- [ ] HCS: mocked submit fires per allowlisted event with exact fingerprint bytes; failure never blocks or throws; trace shows fingerprint + topic link; topic script documents the top-up prerequisite.
-- [ ] Tasks filters work; runbook reads 30-seconds-first.
-- [ ] `pnpm typecheck && pnpm lint && pnpm test` green. No engine/policy/schema/reason-code changes. No new rule types.
+- [x] Template click → full chain visible <3s with verbatim intent + real reason + trace link.
+- [x] Adversarial camera beats → real-DENY banners, zero executions; no-tool state never photographs as a Decision.
+- [x] Play mode runs a scenario hands-free end to end, ending on `/network`.
+- [x] Free text without provider → honest disabled state; with provider → parsed or cleanly declined.
+- [x] HCS: mocked submit fires per allowlisted event with exact fingerprint bytes; failure never blocks or throws; trace shows fingerprint + topic link; topic script documents the top-up prerequisite.
+- [x] Tasks filters work; runbook reads 30-seconds-first.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green. No engine/policy/schema/reason-code changes. No new rule types.
 
 ## Out of scope (explicit — founder-approved cuts)
 

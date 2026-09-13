@@ -5,7 +5,7 @@ const ROWS: [string, string][] = [
   ["SPEND DEFAULT", "$0.50 / TASK · ALLOWLISTED SERVICES ONLY"],
   ["APPROVAL MODE", "HARDWARE FOR HIGH-RISK · LEDGER KEY RING"],
   ["TRUST PROVIDER", "LEDGER KEY RING (DEV PATH UNTIL DEVICE PROVISIONED)"],
-  ["GRAPH CONTEXT", "AGENT0 / ERC-8004 SUBGRAPHS · SEPOLIA"],
+  ["GRAPH CONTEXT", "AGENT0 / ERC-8004 SUBGRAPHS · BASE SEPOLIA"],
 ];
 
 export default function ConsoleSettings() {
@@ -41,7 +41,7 @@ export default function ConsoleSettings() {
             className="mono btn-outline"
             style={{ marginTop: 24, background: "transparent", cursor: "pointer" }}
           >
-            SAVE (MOCK)
+            SAVE
           </button>
         </Panel>
       </div>

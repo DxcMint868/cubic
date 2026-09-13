@@ -1,0 +1,41 @@
+FOOTAGE G — REPUTATION: LAB-1 → GRAPH PLAYGROUND (+ QUICKNODE) (2:43–3:08)
+THE GRAPH BEAT. Two surfaces: our chat/agents, then The Graph's own
+playground. Load and PRE-RUN everything below BEFORE rolling — no typing on
+the external site while cameras run.
+
+BEFORE ROLLING
+- Tab 1: /demo/chat (same session).
+- Tab 2: /console/agents.
+- Tab 3 (preloaded): lab-1's profile page (/console/agents → lab-1). Click
+  "SUBGRAPH DATA — LIVE QUERY" once before rolling: our verify page opens
+  with the exact GraphQL query and The Graph's raw response (feedback rows,
+  fetched live). Hold it ready — this page IS the beat. The explorer link on
+  the page is for the skeptic; the explorer ignores deep-linked queries
+  (verified), so don't plan to type on it on camera.
+
+STEPS (in order, with timing)
+1. [2:43] Tab 1: click "+ N MORE SCENARIOS" to expand, then click
+   "SCENARIO: LOW-REPUTATION READ (ESCALATES)". (This template pins the
+   lab-1 speaker itself — no dropdown change needed.)
+2. [2:45–2:52] Turn renders: ESCALATE banner + reason
+   reputation_below_threshold. HOLD 3s on the banner.
+3. [2:52] Cut to Tab 2: /console/agents. Click the
+   low-rep-research-agent row.
+4. [2:55–3:00] Profile: reputation bar ≈ 0.10, "live — Agent0 subgraph,
+   8453:74108" label, SUBGRAPH DATA — VERIFY ON THE GRAPH link. HOLD 3s.
+5. [2:58] On the profile, click "SUBGRAPH DATA — LIVE QUERY →". The verify
+   page opens in a new tab: QUERY (AS SENT) block + RESPONSE (RAW, FROM THE
+   GRAPH) block, fetched-at timestamp on top.
+6. [3:00–3:08] Scroll once so the RESPONSE block's feedback rows are center
+   frame. HANDS OFF. A paused frame must show: identity 8453:74108 in the
+   response JSON, the negative feedback values, and the
+   gateway.thegraph.com source line at the top. Cut.
+
+VO (~60 words)
+
+    Reputation is not our database either. Lab-1 is a contractor agent
+    with real negative feedback on Base Agent0 — and The Graph indexes
+    it. Watch: its read escalates, because its onchain reputation is
+    below the floor. And here is that record — the exact query and The
+    Graph's verbatim response, live, right now. We didn't paint that.
+    The subgraph did.

@@ -4,7 +4,7 @@ import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import { config } from "../src/server/config";
 import {
-  agents, approvals, auditEvents, capabilities, decisions, executions,
+  agents, approvals, auditEvents, capabilities, councils, decisions, executions,
   intents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { seed } from "../src/server/demo/seed";
@@ -193,6 +193,7 @@ afterAll(async () => {
   await db().delete(agents).where(eq(agents.tenantId, tenantId));
   await db().delete(tools).where(eq(tools.tenantId, tenantId));
   await db().delete(policies).where(eq(policies.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
   await seed(); // restore demo-tenant fixtures after the orchestrator-wiring test
 });

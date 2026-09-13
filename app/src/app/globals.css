@@ -31,6 +31,17 @@ body {
   }
 }
 
+@keyframes think-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
 .mono {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
@@ -61,7 +72,9 @@ body {
 }
 
 .btn-outline:hover {
-  background: #fff;
+  /* !important: many call sites set an inline transparent background, which
+     would otherwise beat this rule and leave black-on-black text on hover. */
+  background: #fff !important;
   border-color: #fff;
   color: #000;
 }

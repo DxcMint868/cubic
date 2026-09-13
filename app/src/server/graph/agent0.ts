@@ -7,6 +7,7 @@ export interface AgentTrust {
   reputation: number;                       // 0..1
   validation: "passed" | "failed" | "unknown";
   capabilities: string[];
+  feedbackCount: number;                    // non-revoked feedback rows seen
 }
 export interface Agent0Client {
   lookup(erc8004Identity: string): Promise<AgentTrust>;   // GraphQL over HTTPS POST + zod-validate AgentTrust
@@ -29,6 +30,22 @@ export function endpoint(): string | null {
   const key = config().THEGRAPH_API_KEY;
   if (!key) return null;
   return `https://gateway.thegraph.com/api/${key}/subgraphs/id/${DEFAULT_SUBGRAPH_ID}`;
+}
+
+// Cross-chain trust context: one endpoint can't serve every chain (our fleet
+// spans Base mainnet lab-1 and Base Sepolia owned agents). Try the explicit
+// endpoint first, then the key-derived mainnet deployment — first indexed hit
+// wins. Order matters: the operator's pinned deployment is authoritative.
+export function endpointCandidates(): string[] {
+  const out: string[] = [];
+  const explicit = config().AGENT0_SUBGRAPH_URL;
+  if (explicit) out.push(explicit);
+  const key = config().THEGRAPH_API_KEY;
+  if (key) {
+    const mainnet = `https://gateway.thegraph.com/api/${key}/subgraphs/id/${DEFAULT_SUBGRAPH_ID}`;
+    if (!out.includes(mainnet)) out.push(mainnet);
+  }
+  return out;
 }
 
 // Query verified against the live Agent0 Subgraphs (ERC-8004) docs and the
@@ -95,6 +112,7 @@ const agentTrustSchema = z.object({
   reputation: z.number().min(0).max(1),
   validation: z.enum(["passed", "failed", "unknown"]),
   capabilities: z.array(z.string()),
+  feedbackCount: z.number().int().min(0),
 });
 
 // Feedback `value` is the ERC-8004 documented 0–100 score; normalize
@@ -141,6 +159,7 @@ function toTrust(agent: {
       ...strings(agent.registrationFile?.mcpTools),
       ...strings(agent.registrationFile?.a2aSkills),
     ],
+    feedbackCount: agent.feedback.length,
   };
 }
 
@@ -150,20 +169,28 @@ export class HttpAgent0Client implements Agent0Client {
     const hit = cache.get(erc8004Identity);
     if (hit && hit.expires > now) return hit.value;
 
-    const url = endpoint();
-    if (!url) throw new Error("agent0: set AGENT0_SUBGRAPH_URL or THEGRAPH_API_KEY");
+    const urls = endpointCandidates();
+    if (urls.length === 0) throw new Error("agent0: set AGENT0_SUBGRAPH_URL or THEGRAPH_API_KEY");
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ query: AGENT0_QUERY, variables: { id: erc8004Identity } }),
-      signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`agent0: http ${res.status}`);
-    const parsed = agentResponseSchema.parse(await res.json());
-    if (!parsed.data.agent) throw new Error(`agent0: identity not indexed: ${erc8004Identity}`);
-    const trust = agentTrustSchema.parse(toTrust(parsed.data.agent));
-    cache.set(erc8004Identity, { value: trust, expires: now + CACHE_TTL_MS });
-    return trust;
+    let lastError: unknown = null;
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ query: AGENT0_QUERY, variables: { id: erc8004Identity } }),
+          signal: AbortSignal.timeout(GRAPHQL_TIMEOUT_MS),
+        });
+        if (!res.ok) throw new Error(`agent0: http ${res.status}`);
+        const parsed = agentResponseSchema.parse(await res.json());
+        if (!parsed.data.agent) throw new Error(`agent0: identity not indexed: ${erc8004Identity}`);
+        const trust = agentTrustSchema.parse(toTrust(parsed.data.agent));
+        cache.set(erc8004Identity, { value: trust, expires: now + CACHE_TTL_MS });
+        return trust;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
   }
 }
