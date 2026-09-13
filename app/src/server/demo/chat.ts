@@ -35,6 +35,12 @@ const DEMO_CLIENT_LABEL = "Demo agent (MCP client)";
 
 export const NO_TOOL_MESSAGE = "No tool matched — nothing was sent to the gateway";
 
+// Canned agent voice when the parser produced no reply at all (provider
+// unset, timeout, non-OK, empty content): states the boundary + what works,
+// so a no-tool turn never renders as a bare fallback.
+export const NO_TOOL_REDIRECT =
+  "I can read PRs, run scans, merge, and deploy through the gateway — try a scenario below.";
+
 // Gateway tools backed by the MCP facade (sdk names in server/mcp/server.ts).
 const MCP_GATEWAY_TO_SDK: Record<string, string> = {
   "scanner.scan": "scanner_scan",
@@ -412,13 +418,14 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
 
   // Display-only no-tool state: plain words, gateway never called. trace_url
   // stays null unconditionally — a turn with zero gateway rows must never
-  // link to a trace full of other turns' Decisions.
+  // link to a trace full of other turns' Decisions. reply always carries a
+  // voice (model prose, model JSON reply, or the canned redirect).
   if (kind === "no-tool" || tool === null) {
     return buildTurn({
       kind: "no-tool",
       template_id: template?.id ?? null,
       chat_text: chatText,
-      reply,
+      reply: reply ?? NO_TOOL_REDIRECT,
       task_id: input.task_id ?? null,
       tool: null,
       arguments: {},

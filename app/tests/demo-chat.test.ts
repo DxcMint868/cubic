@@ -17,8 +17,8 @@ import {
 import { runToolCall } from "../src/server/gateway/orchestrator";
 import { seed } from "../src/server/demo/seed";
 import { CHAT_TEMPLATES, PLAY_BEATS, getTemplate } from "../src/server/demo/templates";
-import { validateParsed } from "../src/server/demo/parse";
-import { clearMcpCacheForTests } from "../src/server/demo/chat";
+import { validateParsed, parseFreeText } from "../src/server/demo/parse";
+import { clearMcpCacheForTests, NO_TOOL_REDIRECT } from "../src/server/demo/chat";
 import { StaticContextProvider, setContextProvider } from "../src/server/gateway/context/provider";
 import type { ContextProvider, FactsCtx, FactsIntentRef } from "../src/server/gateway/context/provider";
 import { POST as mcpPOST } from "../src/app/api/mcp/route";
@@ -383,7 +383,7 @@ describe("plan-16 adversarial display + no-provider templates-only", () => {
     expect(countAfter).toBe(countBefore);
   }, 60000);
 
-  it("free text without provider → honest disabled no-tool state", async () => {
+  it("free text without provider → honest disabled no-tool state with redirect voice", async () => {
     const { json } = await chat({ message: "merge PR 421 please" });
     expect(json.ok).toBe(true);
     const turn = json.data!.turn;
@@ -391,6 +391,8 @@ describe("plan-16 adversarial display + no-provider templates-only", () => {
     expect(turn.tool).toBeNull();
     expect(turn.provider.configured).toBe(false);
     expect(turn.no_tool_message).toBe(NO_TOOL_MESSAGE);
+    // The agent still speaks: canned redirect, never a bare fallback.
+    expect(turn.reply).toBe(NO_TOOL_REDIRECT);
   }, 60000);
 
   it("unknown template id is a 400", async () => {
@@ -510,5 +512,40 @@ describe("plan-16 parse.ts (pure, off-camera)", () => {
     expect(
       validateParsed({ tool: "nope", arguments: {}, reply: "I can't do that." }).reply,
     ).toBe("I can't do that.");
+  });
+});
+
+describe("plan-16 parseFreeText refusal voice (mocked provider)", () => {
+  const jsonResponse = (content: string) =>
+    ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content } }] }),
+    }) as unknown as Response;
+
+  it("prose refusal without JSON surfaces the agent's voice instead of a bare fallback", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    try {
+      const prose = "I can't help with that — I only handle software engineering tasks like PR reviews and scans.";
+      const out = await parseFreeText("how do I enlarge my dick", {
+        fetchImpl: (async () => jsonResponse(prose)) as unknown as typeof fetch,
+      });
+      expect(out.tool).toBeNull();
+      expect(out.reply).toBe(prose);
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
+  });
+
+  it("provider failure yields no reply so the chat layer applies the canned redirect", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    try {
+      const out = await parseFreeText("hello", {
+        fetchImpl: (async () => ({ ok: false, json: async () => null }) as unknown as Response) as unknown as typeof fetch,
+      });
+      expect(out.tool).toBeNull();
+      expect(out.reply).toBeUndefined();
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
   });
 });

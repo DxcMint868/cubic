@@ -174,7 +174,13 @@ export async function parseFreeText(message: string, deps: ParseDeps = {}): Prom
     const content = body?.choices?.[0]?.message?.content;
     if (typeof content !== "string") return { tool: null, arguments: {} };
     const candidate = extractJsonObject(content);
-    if (candidate === null) return { tool: null, arguments: {} };
+    // No JSON block (typical of safety-style prose refusals, which ignore the
+    // strict-JSON instruction): the agent still spoke, so surface its voice
+    // verbatim (truncated) instead of falling back to the generic line.
+    if (candidate === null) {
+      const prose = content.trim().slice(0, 280);
+      return { tool: null, arguments: {}, ...(prose ? { reply: prose } : {}) };
+    }
     if (candidate !== null && typeof candidate === "object" && (candidate as { tool?: unknown }).tool === null) {
       const reply = extractReply(candidate);
       return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };

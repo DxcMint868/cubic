@@ -87,8 +87,10 @@ function DecisionBanner({ turn }: { turn: ChatTurn }) {
 }
 
 function TurnView({ turn }: { turn: ChatTurn }) {
-  // No-tool state: dashed-neutral, plain words — banned from .mono, reason
-  // styling, trace payloads, and e2e assertions. Never photographs as a Decision.
+  // No-tool state: dashed-neutral, plain words — the message body is banned
+  // from .mono, reason styling, trace payloads, and e2e assertions. Never
+  // photographs as a Decision. (The tiny AGENT caption below the body is a
+  // voice label, not engine output.)
   if (turn.kind === "no-tool" || turn.tool === null) {
     return (
       <div style={{ display: "grid", gap: 10 }}>
@@ -104,6 +106,9 @@ function TurnView({ turn }: { turn: ChatTurn }) {
             }}
           >
             {turn.reply ?? turn.no_tool_message ?? "No tool matched — nothing was sent to the gateway"}
+            <p className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a", marginTop: 8 }}>
+              AGENT — OUT OF SCOPE · GATEWAY NEVER CALLED
+            </p>
           </div>
         </div>
       </div>
@@ -147,9 +152,32 @@ function TurnView({ turn }: { turn: ChatTurn }) {
         )}
         <DecisionBanner turn={turn} />
         {turn.decision === "deny" && (
-          <p className="mono" style={{ fontSize: 10.5, letterSpacing: "0.1em", color: "#8a8a8a" }}>
-            GATEWAY INTERCEPTED — LLM DRAFTED, POLICY DENIED · NO CAPABILITY, NO EXECUTION
-          </p>
+          <div style={{ display: "grid", gap: 6 }}>
+            <p className="mono" style={{ fontSize: 10.5, letterSpacing: "0.1em", color: "#8a8a8a" }}>
+              GATEWAY INTERCEPTED — LLM DRAFTED, POLICY DENIED · NO CAPABILITY, NO EXECUTION
+            </p>
+            <div
+              className="mono"
+              style={{
+                border: "1px dashed #3a3a3a",
+                borderRadius: 6,
+                padding: "10px 12px",
+                fontSize: 11,
+                lineHeight: 1.7,
+                color: "#8a8a8a",
+              }}
+            >
+              <p style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a", marginBottom: 4 }}>
+                POLICY ENFORCEMENT DETAIL
+              </p>
+              {turn.matched_policy && <p>policy — {turn.matched_policy}</p>}
+              {turn.matched_rule_id && <p>rule violated — {turn.matched_rule_id}</p>}
+              {turn.reasons.length > 0 && (
+                <p>reasons — {turn.reasons.map((r) => r.code).join(" · ")}</p>
+              )}
+              {turn.risk_score != null && <p>risk score — {turn.risk_score}</p>}
+            </div>
+          </div>
         )}
         {turn.approval && (
           <p className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>

@@ -363,10 +363,9 @@ export default function NetworkGraph({
           ctx.fillStyle = isSelected ? "#ffffff" : "#8a8a8a";
           ctx.fillRect(position.x - 1, position.y - 1, 2, 2);
         }
-        if (isSelected || isHover) {
-          ctx.fillStyle = "rgba(255,255,255,0.7)";
-          ctx.fillText(node.pseudonym.slice(0, 8), position.x, position.y + position.size / 2 + 12);
-        }
+        ctx.fillStyle =
+          isSelected || isHover ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)";
+        ctx.fillText(node.pseudonym.slice(0, 8), position.x, position.y + position.size / 2 + 12);
         ctx.restore();
       }
 
