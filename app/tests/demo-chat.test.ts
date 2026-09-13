@@ -19,6 +19,8 @@ import { seed } from "../src/server/demo/seed";
 import { CHAT_TEMPLATES, PLAY_BEATS, getTemplate } from "../src/server/demo/templates";
 import { validateParsed } from "../src/server/demo/parse";
 import { clearMcpCacheForTests } from "../src/server/demo/chat";
+import { StaticContextProvider, setContextProvider } from "../src/server/gateway/context/provider";
+import type { ContextProvider, FactsCtx, FactsIntentRef } from "../src/server/gateway/context/provider";
 import { POST as mcpPOST } from "../src/app/api/mcp/route";
 import { POST as scannerPOST } from "../src/app/api/services/scanner/scan/route";
 import { GET as chatGET, POST as chatPOST } from "../src/app/api/demo/chat/route";
@@ -438,6 +440,46 @@ describe("plan-16 chat-vs-ingest event identity", () => {
     const directNorm = { ...(directIntent.normalized as unknown as Record<string, unknown>) };
     const turnNorm = { ...(turn.intent as unknown as Record<string, unknown>) };
     expect(directNorm).toEqual(turnNorm);
+  }, 120000);
+});
+
+describe("plan-16 chat sessions land in tasks", () => {
+  it("first turn mints a Chat task; pinned turns share it; template.spec still mints fresh", async () => {
+    const first = await chat({ template_id: "deploy-read" });
+    const sessionTask = first.json.data!.turn.task_id;
+    expect(sessionTask).toMatch(UUID_RE);
+
+    const second = await chat({ template_id: "deploy-read", task_id: sessionTask! });
+    expect(second.json.data!.turn.task_id).toBe(sessionTask);
+
+    const [taskRow] = await db().select().from(tasks).where(eq(tasks.id, sessionTask!));
+    expect(taskRow.title.startsWith("Chat:")).toBe(true);
+
+    const over = await chat({ template_id: "attack-overbudget", task_id: sessionTask! });
+    const beatTask = over.json.data!.turn.task_id;
+    expect(beatTask).toMatch(UUID_RE);
+    expect(beatTask).not.toBe(sessionTask);
+    expect(over.json.data!.turn.reasons[0]?.code).toBe("budget_exceeded");
+  }, 120000);
+
+  it("lab-1 beat escalates on live-or-stubbed low reputation", async () => {
+    const realProvider = new StaticContextProvider();
+    const stub: ContextProvider = {
+      getFacts: async (intent: FactsIntentRef, ctx: FactsCtx) => ({
+        ...(await realProvider.getFacts(intent, ctx)),
+        agent_reputation: 0.1,
+      }),
+    };
+    setContextProvider(stub);
+    try {
+      const { json } = await chat({ template_id: "branch-low-rep" });
+      expect(json.ok).toBe(true);
+      expect(json.data!.turn.decision).toBe("escalate");
+      expect(json.data!.turn.reasons[0]?.code).toBe("reputation_below_threshold");
+      expect(json.data!.turn.reply).toContain("lab-1");
+    } finally {
+      setContextProvider(new StaticContextProvider());
+    }
   }, 120000);
 });
 

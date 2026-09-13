@@ -200,6 +200,7 @@ export interface ResolveApprovalResult {
   approval_id?: string;
   approval_outcome?: string;
   intent_id?: string;
+  signer?: string | null;
   payment_required?: unknown;
   capability: ResolveCapability | null;
   payment: unknown;
@@ -261,16 +262,21 @@ export function getNetworkStats(): Promise<NetworkStats> {
 export function resolveApproval(
   id: string,
   outcome: "approved" | "rejected",
+  signature?: { signature: string; signer: string },
 ): Promise<ResolveApprovalResult> {
   return request<ResolveApprovalResult>(
     `/api/approvals/${encodeURIComponent(id)}/resolve`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ outcome }),
+      body: JSON.stringify({ outcome, ...(signature ?? {}) }),
     },
   );
 }
+
+// Canonical approval-signing message (EIP-191 personal_sign). Built here so
+// the browser wallet and the verifying route sign/check identical bytes.
+export { approvalSignMessage } from "./approval-message";
 
 export function mergeNetworkEvents(
   a: NetworkEvent[],

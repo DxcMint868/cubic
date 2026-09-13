@@ -75,6 +75,39 @@ const SYSTEM_PROMPT = [
 
 const PARSE_TIMEOUT_MS = 8000;
 
+// Extract the first balanced {...} JSON object from model prose. The pinned
+// free model rejects response_format structured-outputs, so the prompt
+// demands strict JSON but the parser never trusts the framing.
+export function extractJsonObject(text: string): unknown {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1)) as unknown;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function extractReply(candidate: unknown): string | undefined {
   if (candidate !== null && typeof candidate === "object") {
     const reply = (candidate as { reply?: unknown }).reply;
@@ -108,7 +141,6 @@ export async function parseFreeText(message: string, deps: ParseDeps = {}): Prom
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: message },
         ],
-        response_format: { type: "json_object" },
       }),
     });
     if (!res.ok) return { tool: null, arguments: {} };
@@ -117,12 +149,8 @@ export async function parseFreeText(message: string, deps: ParseDeps = {}): Prom
     } | null;
     const content = body?.choices?.[0]?.message?.content;
     if (typeof content !== "string") return { tool: null, arguments: {} };
-    let candidate: unknown;
-    try {
-      candidate = JSON.parse(content);
-    } catch {
-      return { tool: null, arguments: {} };
-    }
+    const candidate = extractJsonObject(content);
+    if (candidate === null) return { tool: null, arguments: {} };
     if (candidate !== null && typeof candidate === "object" && (candidate as { tool?: unknown }).tool === null) {
       const reply = extractReply(candidate);
       return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };

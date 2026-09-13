@@ -27,6 +27,8 @@ export interface ChatTemplate {
   task?: { title: string; budget_usd_cents: number };
   /** Lifecycle scripts run through the real machinery (see chat.ts). */
   lifecycle?: "drain-reject" | "replay" | "expired";
+  /** Override the acting agent (default agent:8472). Used for the lab-1 beat. */
+  agent_key?: string;
   /** The agent's opening chat line (canned narration for scenarios). */
   reply?: string;
   /** The e2e assertion for this template. */
@@ -137,6 +139,17 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     expect: { decision: "escalate", reason: "risk_requires_approval", approval_outcome: "rejected" },
   },
   // -- Surfaced branches: already enforced, previously undemoed --
+  {
+    id: "branch-low-rep",
+    label: "Scenario: low-reputation read (escalates)",
+    chat_text: "As lab-1: read PR #421",
+    kind: "tool",
+    tool: "github.get_pull_request",
+    arguments: { repo: "acme/backend", pr: 421 },
+    agent_key: "agent:lab-1",
+    reply: "Reading PR #421 as lab-1. Expect escalation — my reputation precedes me.",
+    expect: { decision: "escalate", reason: "reputation_below_threshold" },
+  },
   {
     id: "branch-cross-task",
     label: "Scenario: read outside the task (denied)",

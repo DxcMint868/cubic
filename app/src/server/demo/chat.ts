@@ -132,10 +132,11 @@ async function callViaMcp(
   baseUrl: string,
   sdkTool: string,
   args: Record<string, unknown>,
+  agentKey: string,
 ): Promise<McpCallResult> {
   const client = new Client({ name: "cubic-demo-chat", version: "0.1.0" });
   const transport = new StreamableHTTPClientTransport(mcpUrl(baseUrl), {
-    requestInit: { headers: { "x-cubic-agent": AGENT_KEY } },
+    requestInit: { headers: { "x-cubic-agent": agentKey } },
   });
   try {
     await client.connect(transport);
@@ -167,7 +168,7 @@ async function resolveTenant(): Promise<{ id: string }> {
 
 // Treasury tool rows + allowlist graft (idempotent). Mirrors the plan-11
 // treasury script's graft; demo-surface data setup, not an engine change.
-async function ensureTreasuryFixtures(tenantId: string): Promise<void> {
+async function ensureTreasuryFixtures(tenantId: string, agentKey: string): Promise<void> {
   await db()
     .insert(tools)
     .values(
@@ -189,16 +190,16 @@ async function ensureTreasuryFixtures(tenantId: string): Promise<void> {
     await db().update(policies).set({ rules }).where(eq(policies.id, policy.id));
   }
   // Per-agent grants are enforced (see orchestrator agent-grant check), so the
-  // demo agent needs the treasury tools granted too — mirrors treasury.ts.
-  const [demoAgent] = await db()
+  // acting agent needs the treasury tools granted too — mirrors treasury.ts.
+  const [actingAgent] = await db()
     .select()
     .from(agents)
-    .where(and(eq(agents.tenantId, tenantId), eq(agents.agentKey, AGENT_KEY)));
-  if (demoAgent) {
-    const have = (demoAgent.declaredCapabilities ?? []) as string[];
+    .where(and(eq(agents.tenantId, tenantId), eq(agents.agentKey, agentKey)));
+  if (actingAgent) {
+    const have = (actingAgent.declaredCapabilities ?? []) as string[];
     const missing = names.filter((n) => !have.includes(n));
     if (missing.length) {
-      await db().update(agents).set({ declaredCapabilities: [...have, ...missing] }).where(eq(agents.id, demoAgent.id));
+      await db().update(agents).set({ declaredCapabilities: [...have, ...missing] }).where(eq(agents.id, actingAgent.id));
     }
   }
 }
@@ -425,21 +426,37 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
     });
   }
 
-  // Fresh task when the template demands one (e.g. the over-budget beat).
+  // Fresh task when the template demands one (e.g. the over-budget beat) —
+  // template.spec always wins so the beat's budget is exact. Otherwise every
+  // chat turn lands in its own session task, so chat sessions show up in
+  // /console/tasks instead of piggybacking the agent's latest open task.
   let taskId = input.task_id ?? null;
-  if (template?.task && !input.task_id) {
-    const [agent] = await db()
-      .select()
-      .from(agents)
-      .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, AGENT_KEY)));
-    if (!agent) throw new Error(`demo chat: ${AGENT_KEY} missing`);
+  const agentKey = template?.agent_key ?? AGENT_KEY;
+  const [actor] = await db()
+    .select()
+    .from(agents)
+    .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, agentKey)));
+  if (!actor) throw new Error(`demo chat: ${agentKey} missing`);
+  if (template?.task) {
     const [task] = await db()
       .insert(tasks)
       .values({
         tenantId: tenant.id,
-        agentId: agent.id,
+        agentId: actor.id,
         title: template.task.title,
         budgetUsdCents: template.task.budget_usd_cents,
+        status: "open",
+      })
+      .returning();
+    taskId = task.id;
+  } else if (!taskId) {
+    const [task] = await db()
+      .insert(tasks)
+      .values({
+        tenantId: tenant.id,
+        agentId: actor.id,
+        title: `Chat: ${chatText.slice(0, 80)}`,
+        budgetUsdCents: 50,
         status: "open",
       })
       .returning();
@@ -447,13 +464,13 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
   }
 
   if (tool.startsWith("treasury.")) {
-    await ensureTreasuryFixtures(tenant.id);
+    await ensureTreasuryFixtures(tenant.id, agentKey);
   }
 
   // Lifecycle scripts run the underlying call, then the scripted step through
   // the real machinery (resolve route / consume path).
   if (template?.lifecycle === "drain-reject") {
-    return runDrainReject({ chatText, template, tool, args, taskId, baseUrl, toolsConnected });
+    return runDrainReject({ chatText, template, tool, args, taskId, baseUrl, toolsConnected, agentKey });
   }
   if (template?.lifecycle === "replay" || template?.lifecycle === "expired") {
     return runCapabilityLifecycle({
@@ -465,10 +482,11 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
       baseUrl,
       toolsConnected,
       mode: template.lifecycle,
+      agentKey,
     });
   }
 
-  const data = await executeCall({ tool, args, taskId, baseUrl });
+  const data = await executeCall({ tool, args, taskId, baseUrl, agentKey });
   return hydrateTurn(
     { template_id: template?.id ?? null, chat_text: chatText, reply, task_id: taskId, tool, arguments: args },
     data.data,
@@ -482,17 +500,18 @@ async function executeCall(input: {
   args: Record<string, unknown>;
   taskId: string | null;
   baseUrl: string;
+  agentKey: string;
 }): Promise<{ data: ToolCallData; transport: "mcp" | "gateway" }> {
   const sdkTool = MCP_GATEWAY_TO_SDK[input.tool];
   if (sdkTool) {
     const callArgs = { ...input.args };
     if (input.taskId) callArgs.task_id = input.taskId;
-    const result = await callViaMcp(input.baseUrl, sdkTool, callArgs);
+    const result = await callViaMcp(input.baseUrl, sdkTool, callArgs, input.agentKey);
     return { data: result.data, transport: "mcp" };
   }
   const result = await runToolCall({
     ...(input.taskId ? { task_id: input.taskId } : {}),
-    agent_key: AGENT_KEY,
+    agent_key: input.agentKey,
     tool: input.tool,
     arguments: input.args,
   });
@@ -511,8 +530,9 @@ async function runDrainReject(input: {
   taskId: string | null;
   baseUrl: string;
   toolsConnected: number | null;
+  agentKey: string;
 }): Promise<ChatTurn> {
-  const executed = await executeCall({ tool: input.tool, args: input.args, taskId: input.taskId, baseUrl: input.baseUrl });
+  const executed = await executeCall({ tool: input.tool, args: input.args, taskId: input.taskId, baseUrl: input.baseUrl, agentKey: input.agentKey });
   if (executed.data.decision !== "escalate" || !executed.data.approval_id) {
     throw new Error(`drain setup: expected escalate + approval, got ${executed.data.decision}`);
   }
@@ -563,8 +583,9 @@ async function runCapabilityLifecycle(input: {
   baseUrl: string;
   toolsConnected: number | null;
   mode: "replay" | "expired";
+  agentKey: string;
 }): Promise<ChatTurn> {
-  const executed = await executeCall({ tool: input.tool, args: input.args, taskId: input.taskId, baseUrl: input.baseUrl });
+  const executed = await executeCall({ tool: input.tool, args: input.args, taskId: input.taskId, baseUrl: input.baseUrl, agentKey: input.agentKey });
   if (!executed.data.capability) throw new Error(`${input.mode} setup: expected a capability`);
   const cap = executed.data.capability;
   if (input.mode === "expired") {

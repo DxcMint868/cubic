@@ -28,7 +28,7 @@ export const payloadSchemas: Record<EventType, z.ZodTypeAny> = {
   // revokes are no longer DB-only — every revoke path emits this.
   "capability.revoked": z.object({ capability_id: uuid, reason: z.string() }),
   "ledger.approval.requested": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), action: z.string(), resource: z.string() }),
-  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().optional() }),
+  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().optional(), signer: z.string().optional(), signature: z.string().optional() }),
   "payment.requested": z.object({ payment_id: uuid, capability_id: uuid, service: z.string(), network: z.literal("hedera"), amount_usd_cents: z.number().int() }),
   "payment.completed": z.object({ payment_id: uuid, capability_id: uuid, settlement_ref: z.string() }),
   "payment.failed": z.object({ payment_id: uuid, capability_id: uuid, error_code: z.string() }),

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   EmptyState,
   ErrorWindow,
@@ -12,7 +12,23 @@ import {
   Tag,
 } from "@/components/ConsoleBits";
 import { deriveApprovals, fmtAge, fmtDateTime, shortId } from "@/components/console/derive";
-import { getAuditEventsPaged, resolveApproval, useApi, type ResolveApprovalResult } from "@/lib/api";
+import { approvalSignMessage, getAuditEventsPaged, resolveApproval, useApi, type ResolveApprovalResult } from "@/lib/api";
+
+// Approver-tab wallet signing (EIP-191 personal_sign over the canonical
+// message). No wallet library: raw window.ethereum JSON-RPC. Absent provider
+// → unsigned dev resolve, labeled as the stand-in.
+async function walletSign(approvalId: string, outcome: "approved" | "rejected"): Promise<{ signature: string; signer: string } | null> {
+  const eth = (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum;
+  if (!eth) return null;
+  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  const signer = accounts[0];
+  if (!signer) throw new Error("wallet returned no accounts");
+  const signature = (await eth.request({
+    method: "personal_sign",
+    params: [approvalSignMessage(approvalId, outcome), signer],
+  })) as string;
+  return { signature, signer };
+}
 
 export default function ConsoleApprovals() {
   const { data, error, loading, reload } = useApi("console-approvals", () =>
@@ -21,14 +37,25 @@ export default function ConsoleApprovals() {
   const { pending, resolved } = useMemo(() => deriveApprovals(data ?? []), [data]);
   const [busy, setBusy] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ResolveApprovalResult>>({});
+  const [signedBy, setSignedBy] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Live queue: re-fetch every 5s so requests pushed from the executor tab
+  // appear without a manual refresh. Pauses while a resolve is in flight.
+  useEffect(() => {
+    if (busy) return;
+    const timer = setInterval(() => reload(), 5000);
+    return () => clearInterval(timer);
+  }, [busy, reload]);
 
   const resolve = async (id: string, outcome: "approved" | "rejected") => {
     setBusy(id);
     setActionError(null);
     try {
-      const result = await resolveApproval(id, outcome);
+      const wallet = await walletSign(id, outcome);
+      const result = await resolveApproval(id, outcome, wallet ?? undefined);
       setResults((prev) => ({ ...prev, [id]: result }));
+      if (wallet) setSignedBy((prev) => ({ ...prev, [id]: wallet.signer }));
       reload();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -72,7 +99,7 @@ export default function ConsoleApprovals() {
       <PageHead
         eyebrow="CONSOLE — APPROVALS"
         title="High-risk queue."
-        sub="Everything the policy escalated. The provider badge is what actually handled it: dev is the in-app queue; ledger is the hardware-backed path. Approving continues the execution phase and issues the capability."
+        sub="Everything the policy escalated. Live — new requests land here within seconds. Sign with your wallet and the signature is sealed into the approval event's fingerprint; without a wallet the dev stand-in resolves unsigned."
       />
 
       {actionError && (
@@ -162,6 +189,9 @@ export default function ConsoleApprovals() {
                     >
                       <span>
                         RESOLVED — {String(result.approval_outcome ?? "").toUpperCase()}
+                        {signedBy[approval.approvalId] || result.signer
+                          ? ` · SIGNED ${shortId(signedBy[approval.approvalId] ?? result.signer ?? "", 10)}`
+                          : " · UNSIGNED (DEV STAND-IN)"}
                       </span>
                       {result.capability ? (
                         <span style={{ color: "#8a8a8a" }}>
@@ -195,8 +225,9 @@ export default function ConsoleApprovals() {
                           border: "1px solid #e8e8e8",
                           color: "#000",
                         }}
+                        title="Sign with wallet, or unsigned dev resolve when no wallet is present"
                       >
-                        {busy === approval.approvalId ? "RESOLVING…" : "APPROVE"}
+                        {busy === approval.approvalId ? "RESOLVING…" : "SIGN & APPROVE"}
                       </button>
                       <button
                         onClick={() => resolve(approval.approvalId, "rejected")}
@@ -206,8 +237,9 @@ export default function ConsoleApprovals() {
                           cursor: busy === approval.approvalId ? "default" : "pointer",
                           background: "transparent",
                         }}
+                        title="Sign with wallet, or unsigned dev resolve when no wallet is present"
                       >
-                        DENY
+                        SIGN & DENY
                       </button>
                     </div>
                   )}

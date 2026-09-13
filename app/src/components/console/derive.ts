@@ -213,6 +213,29 @@ export function deriveApprovals(events: AuditEvent[]): {
 
   const ordered = [...events].sort((a, b) => a.id - b.id);
 
+  // policy.evaluated fires BEFORE the approval row + requested event exist,
+  // so the decision→policy join can't resolve in one pass. Pre-scan first.
+  const policyByDecision = new Map<string, { policy: string | null; rule: string | null; score: number | null }>();
+  for (const event of ordered) {
+    if (event.event_type !== "policy.evaluated") continue;
+    const decisionId = asString(event.payload.decision_id);
+    if (!decisionId || policyByDecision.has(decisionId)) continue;
+    policyByDecision.set(decisionId, {
+      policy: asString(event.payload.matched_policy),
+      rule: asString(event.payload.matched_rule_id),
+      score: asNumber(event.payload.risk_score),
+    });
+  }
+
+  const applyPolicy = (item: ApprovalItem): void => {
+    if (!item.decisionId) return;
+    const join = policyByDecision.get(item.decisionId);
+    if (!join) return;
+    item.matchedPolicy = join.policy;
+    item.matchedRuleId = join.rule;
+    item.riskScore = join.score;
+  };
+
   for (const event of ordered) {
     const payload = event.payload;
     if (event.event_type === "ledger.approval.requested") {
@@ -226,6 +249,7 @@ export function deriveApprovals(events: AuditEvent[]): {
       item.requestedAt = event.created_at;
       item.taskId = event.task_id;
       item.agentId = event.agent_id;
+      applyPolicy(item);
     } else if (event.event_type === "ledger.approval.completed") {
       const id = asString(payload.approval_id);
       if (!id) continue;
@@ -242,6 +266,7 @@ export function deriveApprovals(events: AuditEvent[]): {
       item.decisionId = asString(payload.decision_id) ?? item.decisionId;
       item.intentId = asString(payload.intent_id) ?? item.intentId;
       item.reasons = asStringArray(payload.reason_codes);
+      applyPolicy(item);
     } else if (event.event_type === "policy.evaluated") {
       const decisionId = asString(payload.decision_id);
       if (!decisionId) continue;

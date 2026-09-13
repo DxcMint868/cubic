@@ -16,6 +16,7 @@ import {
   getChatBootstrap,
   postChatTurn,
   type ChatBootstrap,
+  type ChatResponse,
   type ChatTurn,
 } from "@/lib/api";
 
@@ -223,6 +224,17 @@ export default function DemoChat() {
   const [playing, setPlaying] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  // The session task pins every turn of one conversation to the same task row
+  // so chat sessions land in /console/tasks. Adopted from the first turn that
+  // returns one; template-spec tasks (over-budget beat) always mint their own.
+  const [sessionTaskId, setSessionTaskId] = useState<string | null>(null);
+
+function describeFailure(err: unknown): string {
+  if (err instanceof TypeError && err.message === "Failed to fetch") {
+    return "Couldn't reach the dev server — is `pnpm dev` running on this origin?";
+  }
+  return err instanceof Error ? err.message : String(err);
+}
   const bottomRef = useRef<HTMLDivElement>(null);
   const playAbort = useRef(false);
 
@@ -242,7 +254,10 @@ export default function DemoChat() {
     // instantly — the engine round-trip never leaves dead silence.
     setItems((prev) => [...prev, { kind: "user", text: chat_text }, { kind: "pending", id: pid }]);
     try {
-      const res = await withTimeout(postChatTurn({ template_id }));
+      const res = await withTimeout(
+        postChatTurn(sessionTaskId ? { template_id, task_id: sessionTaskId } : { template_id }),
+      );
+      if (!sessionTaskId && res.turn.task_id) setSessionTaskId(res.turn.task_id);
       setItems((prev) =>
         prev.map((item) =>
           item.kind === "pending" && item.id === pid
@@ -251,7 +266,7 @@ export default function DemoChat() {
         ),
       );
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : String(err));
+      setFailed(describeFailure(err));
       setItems((prev) => prev.filter((item) => !(item.kind === "pending" && item.id === pid)));
     } finally {
       setBusy(false);
@@ -267,14 +282,17 @@ export default function DemoChat() {
     const pid = ++pendingSeq;
     setItems((prev) => [...prev, { kind: "user", text: message }, { kind: "pending", id: pid }]);
     try {
-      const res = await withTimeout(postChatTurn({ message }));
+      const res = await withTimeout(
+        postChatTurn(sessionTaskId ? { message, task_id: sessionTaskId } : { message }),
+      );
+      if (!sessionTaskId && res.turn.task_id) setSessionTaskId(res.turn.task_id);
       setItems((prev) =>
         prev.map((item) =>
           item.kind === "pending" && item.id === pid ? { kind: "turn" as const, turn: res.turn } : item,
         ),
       );
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : String(err));
+      setFailed(describeFailure(err));
       setItems((prev) => prev.filter((item) => !(item.kind === "pending" && item.id === pid)));
     } finally {
       setBusy(false);
@@ -286,6 +304,9 @@ export default function DemoChat() {
     setPlaying(true);
     playAbort.current = false;
     setFailed(null);
+    // A Play run is one session: reset the pin so all beats share one task.
+    setSessionTaskId(null);
+    let playTaskId: string | null = null;
     try {
       for (const beat of PLAY_BEATS) {
         if (playAbort.current) break;
@@ -296,7 +317,13 @@ export default function DemoChat() {
           const label = bootstrap?.templates.find((t) => t.id === beat.template_id)?.chat_text ?? beat.template_id;
           const pid = ++pendingSeq;
           setItems((prev) => [...prev, { kind: "user", text: label }, { kind: "pending", id: pid }]);
-          const res = await withTimeout(postChatTurn({ template_id: beat.template_id }));
+          const res: ChatResponse = await withTimeout(
+            postChatTurn(playTaskId ? { template_id: beat.template_id, task_id: playTaskId } : { template_id: beat.template_id }),
+          );
+          if (!playTaskId && res.turn.task_id) {
+            playTaskId = res.turn.task_id;
+            setSessionTaskId(res.turn.task_id);
+          }
           setItems((prev) =>
             prev.map((item) =>
               item.kind === "pending" && item.id === pid
@@ -309,7 +336,7 @@ export default function DemoChat() {
       }
       if (!playAbort.current) router.push("/network");
     } catch (err) {
-      setFailed(err instanceof Error ? err.message : String(err));
+      setFailed(describeFailure(err));
       setItems((prev) => prev.filter((item) => item.kind !== "pending"));
     } finally {
       setPlaying(false);
