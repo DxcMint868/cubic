@@ -13,6 +13,10 @@
     "demo": "tsx src/server/demo/agent.ts",
     "demo:adversarial": "tsx src/server/demo/agent.ts --adversarial",
     "demo:treasury": "tsx src/server/demo/treasury.ts",
+    "demo:chat": "vitest run tests/demo-chat.test.ts",
+    "demo:populate": "tsx scripts/populate-demo.ts",
+    "demo:wipe-payments": "tsx scripts/wipe-payments.ts",
+    "hcs:init": "tsx src/server/anchors/init-topic.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
@@ -26,6 +30,7 @@
     "postgres": "^3.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "viem": "^2.56.5",
     "zod": "^3.25.0"
   },
   "devDependencies": {

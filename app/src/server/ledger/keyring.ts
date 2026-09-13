@@ -113,6 +113,7 @@ export class LedgerKeyRingProvider implements ApprovalProvider, SecretProtector 
         provider: "ledger",
         status: "pending",
         providerRef,
+        council: input.council ?? null,
       })
       .returning();
     return { approval_id: row.id };

@@ -44,7 +44,7 @@ beforeAll(async () => {
   // stub it deterministically (the real hop lives in execution.test.ts).
   registerExecutor("scanner", {
     execute: async (input) => ({
-      summary: `Security scan of ${String(input.args.target)}: clean (dev mode)`,
+      summary: `Security scan of ${String(input.args.target)}: clean — no criticals, 2 advisories`,
       result: { report_id: "rpt_stub0000", target: input.args.target, verdict: "clean", findings: [], mode: "dev" },
       mode: "dev",
     }),
@@ -298,7 +298,9 @@ describe("plan-02 gateway", () => {
 
     expect(body.data.events.length).toBeGreaterThan(0);
     for (const event of body.data.events) {
-      expect(Object.keys(event).sort()).toEqual(["event_type", "occurred_at", "payload"]);
+      // plan-16: trace events now carry the derived HCS anchor
+      // {fingerprint, topic_id} (computed, never stored).
+      expect(Object.keys(event).sort()).toEqual(["anchor", "event_type", "occurred_at", "payload"]);
       expect(typeof event.occurred_at).toBe("string");
     }
     expect(body.data.events[0].event_type).toBe("intent.created");

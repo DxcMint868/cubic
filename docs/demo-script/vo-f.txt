@@ -1,0 +1,31 @@
+FOOTAGE F — ATTACKS: SECRET READ + OVERBUDGET → DENY ×2 (2:23–2:43)
+
+BEFORE ROLLING
+- Same chat session. Both attack templates are PINNED buttons — this footage
+  never depends on the free model.
+
+STEPS (in order, with timing)
+1. [2:23] Click the pinned button "CAMERA BEAT: READ .ENV.PRODUCTION (DENIED)".
+2. [2:25–2:31] Turn renders: ✕ DENY banner (dashed) + the POLICY ENFORCEMENT
+   DETAIL block (policy default-v1, rule deny-secret-resources, reason
+   secret_resource, risk score). Scroll the detail block fully into frame.
+   HOLD 4s — the block text must be readable in a paused frame.
+3. [2:31–2:34] The agent's refusal line is in the same turn ("no capability,
+   no execution"). One slow cursor pass over it.
+4. [2:34] Click the pinned button "CAMERA BEAT: 25¢ SCAN ON A 10¢ TASK
+   (DENIED)". THINKING dots (no LLM — fast, ~2s).
+5. [2:37–2:43] Turn renders: ✕ DENY budget_exceeded, payment null,
+   execution null, and a fresh 10-cent task was minted for the attempt.
+   HOLD 3s on the banner. Cut at 2:43.
+
+WHAT MUST BE LEGIBLE IN THE HELD FRAMES
+- Frame 1: DENY + secret_resource + rule id.
+- Frame 2: DENY + budget_exceeded + "no execution".
+
+VO (~50 words)
+
+    Now the attacks that ended Acme's pilot last year. An injected
+    instruction tells the agent to read production secrets — denied
+    before a byte leaves. Then it tries to overspend its budget —
+    denied again, before any money moves. Same pipeline, opposite
+    verdict. The model drafts; the policy decides.

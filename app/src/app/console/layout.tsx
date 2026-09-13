@@ -35,6 +35,7 @@ export default function ConsoleLayout({
       href: "/console/approvals",
       badge: pendingApprovals > 0 ? String(pendingApprovals) : undefined,
     },
+    { label: "APPROVERS", href: "/console/approvers" },
     { label: "AUDIT", href: "/console/audit" },
     { label: "PAYMENTS", href: "/console/payments" },
     { label: "SETTINGS", href: "/console/settings" },

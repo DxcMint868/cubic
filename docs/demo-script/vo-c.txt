@@ -1,0 +1,36 @@
+FOOTAGE C — CHAT: FREE TEXT → ALLOW (0:48–1:13)
+
+BEFORE ROLLING
+- Dev server on :3000, reseeded (curl -X POST localhost:3000/api/demo/seed).
+- /demo/chat open, browser zoom ~110%, window ~1280px wide so the intent
+  JSON is readable.
+- OpenRouter key present (free text fires). If it fails on the day, fallback:
+  click the pinned "SCENARIO: READ PR #421" button instead and use take B's
+  VO line "watch a normal action" unchanged.
+
+STEPS (in order, with timing)
+1. [0:48] Mouse to the AGENT dropdown (SPEAKING AS header). Click it,
+   select DEPLOY-AGENT. Do not touch anything else.
+2. [0:51] Click into the free-text input. Type slowly, visibly:
+   "Read PR #421"
+3. [0:56] Click SEND. THINKING dots appear — do nothing, let them run
+   (5–15s with OpenRouter; if >25s, cut and retake).
+4. [~1:02] Turn renders: user bubble → agent reply ("On it — pulling up
+   PR #421.") → intent JSON → ALLOW banner (filled/light).
+5. [1:03] Scroll so the ALLOW banner AND the intent JSON are both fully in
+   frame. Stop scrolling.
+6. [1:05–1:12] Hold. Move the cursor slowly to hover the intent JSON block
+   (do not click). Cut at 1:13.
+
+WHAT MUST BE LEGIBLE IN THE HELD FRAME
+- The ALLOW banner with its reason code (policy_default_allow).
+- The verbatim intent JSON (tool: github.get_pull_request, repo, pr: 421).
+
+VO (~60 words)
+
+    Watch a normal action. The agent is asked — in plain English — to
+    read a pull request. It drafts a tool call. But the draft proves
+    nothing: the gateway normalizes it into a policy-checked intent,
+    and the decision — allow — comes from deterministic rules, not
+    from the model. Low-risk read, policy says allow. On to the
+    record.

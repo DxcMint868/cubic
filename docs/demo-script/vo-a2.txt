@@ -1,0 +1,15 @@
+FOOTAGE A2 — TITLE CARD: THE ACME HYPOTHESIS (0:20–0:28)
+Screen: full-screen monochrome title card (black bg, white text). Two lines,
+already on screen when the shot starts — no typing on camera:
+
+    Imagine you're Acme.
+    120-person fintech. Real treasury onchain. Four AI agents with real jobs.
+
+Hold the card the whole shot. This is the transition into the story world;
+Footage B opens on Acme's agent roster.
+
+VO (~28 words)
+
+    So imagine you're Acme — a fintech with real money onchain and an
+    AI workforce: agents that ship code and agents that move funds.
+    Here's what granting them power looks like with Cubic.

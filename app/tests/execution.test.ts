@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
-  agents, auditEvents, capabilities, decisions, executions, intents,
+  agents, auditEvents, capabilities, councils, decisions, executions, intents,
   networkEvents, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { pseudonymFor } from "../src/server/events/projection";
@@ -167,6 +167,7 @@ afterAll(async () => {
   await db().delete(agents).where(eq(agents.tenantId, tenantId));
   await db().delete(tools).where(eq(tools.tenantId, tenantId));
   await db().delete(policies).where(eq(policies.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonymFor(AGENT_KEY)));
   delete process.env.DEMO_TENANT_SLUG;
@@ -199,9 +200,9 @@ describe("plan-04 executors", () => {
       capability: { ...base, action: "get_pull_request" },
       args: { repo: "acme/backend", pr: 421 },
     });
-    expect("summary" in pr && pr.summary).toBe("PR #421 'Fix auth flow' — CI passing, approved (mock)");
+    expect("summary" in pr && pr.summary).toBe("PR #421 'Fix auth flow' — CI passing, approved");
     expect(pr).toEqual({
-      summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      summary: "PR #421 'Fix auth flow' — CI passing, approved",
       result: { repo: "acme/backend", pr: 421, title: "Fix auth flow", ci: "passing", approved: true },
       mode: "mock",
     });
@@ -211,7 +212,7 @@ describe("plan-04 executors", () => {
       args: { repo: "acme/backend", path: "README.md" },
     });
     expect(file).toEqual({
-      summary: "Read README.md (mock)",
+      summary: "Read README.md — 24 lines",
       result: { path: "README.md", content: "mock file content" },
       mode: "mock",
     });
@@ -220,7 +221,7 @@ describe("plan-04 executors", () => {
       capability: { ...base, action: "merge_pull_request" },
       args: { repo: "acme/backend", pr: 421 },
     });
-    expect(merged).toEqual({ summary: "Merged PR #421 (mock)", result: { merged: true }, mode: "mock" });
+    expect(merged).toEqual({ summary: "Merged PR #421 — branch main updated", result: { merged: true }, mode: "mock" });
   });
 
   it("scanner service route: EXACT response shape, config-driven price, report_id regex", async () => {
@@ -271,7 +272,7 @@ describe("plan-04 executors", () => {
     });
     expect("status" in outcome).toBe(false);
     expect(outcome).toMatchObject({
-      summary: "Security scan of acme/backend#421: clean (dev mode)",
+      summary: "Security scan of acme/backend#421: clean — no criticals, 2 advisories",
       mode: "dev",
     });
     const result = (outcome as { result: Record<string, unknown> }).result;
@@ -313,7 +314,7 @@ describe("plan-04 orchestrator execution phase", () => {
     if (!result.ok) return;
     expect(result.data.execution).toMatchObject({
       status: "succeeded",
-      result_summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      result_summary: "PR #421 'Fix auth flow' — CI passing, approved",
     });
 
     const res = await traceGET(
@@ -329,7 +330,7 @@ describe("plan-04 orchestrator execution phase", () => {
     expect(entry.executions).toHaveLength(1);
     expect(entry.executions[0]).toMatchObject({
       tool: "github.get_pull_request", status: "succeeded", executor: "github",
-      result_summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      result_summary: "PR #421 'Fix auth flow' — CI passing, approved",
     });
 
     const eventTypes = body.data.events.map((e: { event_type: string }) => e.event_type);
@@ -351,7 +352,9 @@ describe("plan-04 orchestrator execution phase", () => {
     );
     expect(started).toBeDefined();
     expect(completed).toBeDefined();
-    expect(completed.payload.result_summary).toContain("(mock)"); // mode:"mock" visible
+    // Full-fiction posture: no "(mock)" parenthetical in summaries; the
+    // execution row's mode field ("mock") is the honest signal.
+    expect(completed.payload.result_summary).toContain("Fix auth flow");
     expect(eventTypes[0]).toBe("intent.created");
   }, 30000);
 
@@ -371,7 +374,7 @@ describe("plan-04 orchestrator execution phase", () => {
     expect(cap!.status).toBe("consumed");
     const [execRow] = await db().select().from(executions).where(eq(executions.capabilityId, capId));
     expect(execRow.status).toBe("succeeded");
-    expect(execRow.resultSummary).toBe("Security scan of acme/backend#421: clean (dev mode)");
+    expect(execRow.resultSummary).toBe("Security scan of acme/backend#421: clean — no criticals, 2 advisories");
   }, 30000);
 
   it("forced-402 stub → data.payment_required set, NO executions row, NO capability.consumed, capability still issued", async () => {
