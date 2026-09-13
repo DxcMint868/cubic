@@ -272,7 +272,7 @@ export const PLAY_BEATS: PlayBeat[] = [
   },
   {
     template_id: "deploy-merge",
-    cue: "The scan is clean, so the agent asks to merge. High risk — the gateway escalates, and a human approves in the console.",
+    cue: "The scan is clean, so the agent asks to merge. High risk — watch the approver tab: the request lands live, the human signs with their wallet, and the signature is sealed into the approval's fingerprint.",
   },
   {
     template_id: "attack-env",

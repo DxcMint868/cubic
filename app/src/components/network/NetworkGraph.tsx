@@ -247,8 +247,8 @@ export default function NetworkGraph({
 
       // Column headers.
       ctx.fillStyle = "rgba(255,255,255,0.34)";
-      ctx.fillText("AGENTS", ax, 22);
-      ctx.fillText("SERVICES", sx, 22);
+      ctx.fillText(`AGENTS · ${nodes.length}`, ax, 22);
+      ctx.fillText(`SERVICES · ${SERVICES.length}`, sx, 22);
 
       // Static rails: agents → gateway, gateway → services.
       ctx.lineWidth = 1;

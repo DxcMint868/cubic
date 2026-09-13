@@ -82,29 +82,7 @@ export default function NetworkPage() {
     [initial.data, live],
   );
 
-  const regionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    const seen = new Set<string>();
-    for (const event of events) {
-      if (seen.has(event.agent_pseudonym)) continue;
-      seen.add(event.agent_pseudonym);
-      const r = regionFor(event.agent_pseudonym);
-      counts.set(r, (counts.get(r) ?? 0) + 1);
-    }
-    return counts;
-  }, [events]);
-
-  const regionTabs = useMemo(
-    () =>
-      REGIONS.map((r) => ({
-        id: r.id,
-        label:
-          r.id === "global"
-            ? `GLOBAL · ${regionCounts.size ? [...regionCounts.values()].reduce((a, b) => a + b, 0) : 0}`
-            : `${r.label} · ${regionCounts.get(r.id) ?? 0}`,
-      })),
-    [regionCounts],
-  );
+  const regionTabs = useMemo(() => REGIONS.map((r) => ({ id: r.id, label: r.label })), []);
 
   const visibleEvents = useMemo(
     () => events.filter((event) => inRegion(event.agent_pseudonym, region)),
