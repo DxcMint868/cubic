@@ -1,12 +1,32 @@
-FOOTAGE B — CONSOLE: AGENTS (0:36–0:56)
-Screen: /console/agents. Four rows: deploy-agent, treasury-agent,
-reader-agent, low-rep-research-agent. Click ONE row → profile page: SOUL.md
-panel, ALLOWED TOOLS, ERC-8004 identity line (84532:9223), reputation bar.
+FOOTAGE B — CONSOLE: AGENTS (0:28–0:48)
 
-SHOT LIST
-1. 0:33–0:40 — agents list, hold. Cursor to deploy-agent.
-2. 0:40–0:48 — profile: scroll SOUL.md briefly, rest on ALLOWED TOOLS.
-3. 0:48–0:53 — identity + reputation line; hold 3s (84532:9223 readable).
+BEFORE ROLLING
+- Pre-flight population done (every agent has ≥1 audit event, so all four
+  rows show — see README step 1).
+- Tab open on http://localhost:3000/console/agents, zoom ~110%.
+
+STEPS (in order, with timing)
+1. [0:28–0:35] Agents list. HANDS OFF first — hold the full four-row cast:
+   deploy-agent, low-rep-research-agent, treasury-agent, reader-agent, each
+   with its stats. Then one slow cursor pass down the rows.
+2. [0:35] Click the deploy-agent row → profile page
+   (/console/agents/<id>).
+3. [0:37–0:43] Scroll slowly through SOUL.md (the charter text), stop with
+   ALLOWED TOOLS in frame — read perms: github.*, scanner.scan,
+   deploy.production with MCP/direct tags, and the NOT GRANTED line absent
+   (deploy holds everything; the reader profile shows the contrast if you
+   prefer that shot — see fallback).
+4. [0:43–0:48] Scroll to the identity block: ERC-8004 84532:9223,
+   reputation bar ≈0.95 ("live — Agent0 subgraph"). HOLD 4s — the identity
+   string must be readable in a paused frame. Cut.
+
+FALLBACK SHOT (if you'd rather show least-privilege than full grants)
+- Instead of step 3, click low-rep-research-agent: ALLOWED TOOLS shows one
+  tool, the rest under NOT GRANTED. VO line becomes: "This one ships code —
+  and that one? Reads only. Granted, never assumed."
+
+WHAT MUST BE LEGIBLE IN THE HELD FRAME
+- The four names on the list; ERC-8004 identity + reputation on the profile.
 
 VO (~50 words)
 
