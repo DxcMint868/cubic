@@ -27,6 +27,8 @@ export interface ChatTemplate {
   task?: { title: string; budget_usd_cents: number };
   /** Lifecycle scripts run through the real machinery (see chat.ts). */
   lifecycle?: "drain-reject" | "replay" | "expired";
+  /** The agent's opening chat line (canned narration for scenarios). */
+  reply?: string;
   /** The e2e assertion for this template. */
   expect: {
     decision?: "allow" | "deny" | "escalate";
@@ -46,6 +48,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "deploy-read",
     label: "Scenario: read PR #421",
     chat_text: "Read PR #421 in acme/backend",
+    reply: "On it — pulling up PR #421.",
     kind: "tool",
     tool: "github.get_pull_request",
     arguments: { repo: "acme/backend", pr: 421 },
@@ -55,6 +58,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "deploy-scan",
     label: "Scenario: scan PR #421 ($0.25)",
     chat_text: "Scan acme/backend#421 for risks",
+    reply: "Kicking off a security scan. The service charges for this one, so watch the receipt.",
     kind: "tool",
     tool: "scanner.scan",
     arguments: { target: "acme/backend#421" },
@@ -64,6 +68,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "deploy-merge",
     label: "Scenario: merge PR #421 (escalates)",
     chat_text: "Merge PR #421 in acme/backend",
+    reply: "Merge requested. That's high-risk — it'll need a human.",
     kind: "tool",
     tool: "github.merge_pull_request",
     arguments: { repo: "acme/backend", pr: 421 },
@@ -73,6 +78,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "deploy-run",
     label: "Scenario: deploy to production (escalates)",
     chat_text: "Deploy acme/backend to production",
+    reply: "Production deploy requested. Escalating — a human decides this one.",
     kind: "tool",
     tool: "deploy.production",
     arguments: { repo: "acme/backend" },
@@ -83,6 +89,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "treasury-swap",
     label: "Scenario: $240k treasury swap (escalates)",
     chat_text: "Swap $240,000 USDC/ETH for the treasury rebalance",
+    reply: "Preparing the $240k rebalance swap. Needs approval first.",
     kind: "tool",
     tool: "treasury.swap",
     arguments: { asset_pair: "USDC/ETH", amount_usd_cents: 24_000_000 },
@@ -92,6 +99,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "treasury-payroll",
     label: "Scenario: $85k payroll transfer (escalates)",
     chat_text: "Pay $85,000 payroll from the treasury",
+    reply: "Payroll transfer queued. Needs approval first.",
     kind: "tool",
     tool: "treasury.transfer",
     arguments: { destination: "payroll/ops-multisig", amount_usd_cents: 8_500_000 },
@@ -101,6 +109,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "treasury-stake-small",
     label: "Scenario: stake 0.5 ETH (allows)",
     chat_text: "Stake 0.5 ETH (≈$50) with lido",
+    reply: "Small stake — this one should go straight through.",
     kind: "tool",
     tool: "treasury.stake",
     arguments: { protocol: "lido", amount_usd_cents: 5_000 },
@@ -110,6 +119,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "treasury-stake-large",
     label: "Scenario: stake 50 ETH (escalates)",
     chat_text: "Stake 50 ETH (≈$5,000) with lido",
+    reply: "Large stake — escalating for approval.",
     kind: "tool",
     tool: "treasury.stake",
     arguments: { protocol: "lido", amount_usd_cents: 500_000 },
@@ -119,6 +129,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "treasury-drain",
     label: "Scenario: $450k swap (approver rejects)",
     chat_text: "Swap $450,000 USDC/ETH — oversized",
+    reply: "Whoa — $450k in one swap. Sending it up, but I'd bet against approval.",
     kind: "lifecycle",
     tool: "treasury.swap",
     arguments: { asset_pair: "USDC/ETH", amount_usd_cents: 45_000_000 },
@@ -130,6 +141,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "branch-cross-task",
     label: "Scenario: read outside the task (denied)",
     chat_text: "Read the README in evil/org",
+    reply: "Looking up that repo now.",
     kind: "tool",
     tool: "github.read_file",
     arguments: { repo: "evil/org", path: "README.md" },
@@ -139,6 +151,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "branch-unknown-tool",
     label: "Scenario: unknown tool (denied)",
     chat_text: "Delete the repo",
+    reply: "Attempting that now.",
     kind: "tool",
     tool: "github.delete_repo",
     arguments: { repo: "acme/backend" },
@@ -148,6 +161,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "branch-replay",
     label: "Scenario: replay a capability (rejected)",
     chat_text: "Replay a spent capability",
+    reply: "Testing what happens when a capability gets used twice.",
     kind: "lifecycle",
     tool: "github.get_pull_request",
     arguments: { repo: "acme/backend", pr: 421 },
@@ -158,6 +172,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "branch-expired",
     label: "Scenario: expired capability (rejected)",
     chat_text: "Use an expired capability",
+    reply: "Testing what happens with an expired capability.",
     kind: "lifecycle",
     tool: "github.get_pull_request",
     arguments: { repo: "acme/backend", pr: 421 },
@@ -169,6 +184,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "attack-env",
     label: "Camera beat: read .env.production (denied)",
     chat_text: "Read .env.production in acme/backend",
+    reply: "Reading the requested file now.",
     kind: "tool",
     tool: "github.read_file",
     arguments: { repo: "acme/backend", path: ".env.production" },
@@ -178,6 +194,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "attack-overbudget",
     label: "Camera beat: 25¢ scan on a 10¢ task (denied)",
     chat_text: "Buy the $0.25 security scan on this 10¢ task",
+    reply: "Buying the scan on this task now.",
     kind: "tool",
     tool: "scanner.scan",
     arguments: { target: "acme/backend#421", purchase: true, price_usd_cents: 25 },
@@ -189,6 +206,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     id: "no-tool-hello",
     label: "Scenario: small talk (no tool)",
     chat_text: "Hello — what can you do?",
+    reply: "Hey — I can read PRs, run scans, merge, and deploy, all through the gateway. Try a scenario below.",
     kind: "no-tool",
     tool: null,
     arguments: {},
@@ -199,6 +217,16 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
 export function getTemplate(id: string): ChatTemplate | null {
   return CHAT_TEMPLATES.find((t) => t.id === id) ?? null;
 }
+
+// The 5 most valuable scenarios — the chat page pins these so the UI never
+// clutters. They are exactly the Play beats (minus the title card + finale).
+export const PINNED_TEMPLATE_IDS: readonly string[] = [
+  "deploy-read",
+  "deploy-scan",
+  "deploy-merge",
+  "attack-env",
+  "attack-overbudget",
+];
 
 // plan-16 EXACT — Play order: the hands-free scenario, beat by beat. Beat 0
 // is a title card + voiceover (no raw-agent build). Play ends on /network.

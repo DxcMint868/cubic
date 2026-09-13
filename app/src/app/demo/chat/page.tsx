@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import MacWindow from "@/components/MacWindow";
-import { PLAY_BEATS } from "@/server/demo/templates";
+import { PLAY_BEATS, PINNED_TEMPLATE_IDS } from "@/server/demo/templates";
 import {
   getChatBootstrap,
   postChatTurn,
@@ -22,7 +22,11 @@ import {
 type Item =
   | { kind: "card"; cue: string }
   | { kind: "cue"; cue: string }
+  | { kind: "user"; text: string }
+  | { kind: "pending"; id: number }
   | { kind: "turn"; turn: ChatTurn };
+
+let pendingSeq = 0;
 
 function DecisionBanner({ turn }: { turn: ChatTurn }) {
   if (!turn.decision) return null;
@@ -87,20 +91,6 @@ function TurnView({ turn }: { turn: ChatTurn }) {
   if (turn.kind === "no-tool" || turn.tool === null) {
     return (
       <div style={{ display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <div
-            style={{
-              border: "1px solid #3a3a3a",
-              borderRadius: 8,
-              padding: "10px 14px",
-              maxWidth: "80%",
-              fontSize: 14,
-              color: "#e8e8e8",
-            }}
-          >
-            {turn.chat_text}
-          </div>
-        </div>
         <div style={{ display: "flex", justifyContent: "flex-start" }}>
           <div
             style={{
@@ -112,7 +102,7 @@ function TurnView({ turn }: { turn: ChatTurn }) {
               color: "#8a8a8a",
             }}
           >
-            {turn.no_tool_message ?? "No tool matched — nothing was sent to the gateway"}
+            {turn.reply ?? turn.no_tool_message ?? "No tool matched — nothing was sent to the gateway"}
           </div>
         </div>
       </div>
@@ -121,24 +111,15 @@ function TurnView({ turn }: { turn: ChatTurn }) {
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <div
-          style={{
-            border: "1px solid #3a3a3a",
-            borderRadius: 8,
-            padding: "10px 14px",
-            maxWidth: "80%",
-            fontSize: 14,
-            color: "#e8e8e8",
-          }}
-        >
-          {turn.chat_text}
-        </div>
-      </div>
       <div style={{ display: "grid", gap: 8 }}>
         <p className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a" }}>
           {turn.client_label.toUpperCase()}
         </p>
+        {turn.reply && (
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <div style={{ fontSize: 14, color: "#e8e8e8", maxWidth: "85%" }}>{turn.reply}</div>
+          </div>
+        )}
         {turn.intent && (
           <pre
             className="mono"
@@ -241,6 +222,7 @@ export default function DemoChat() {
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const playAbort = useRef(false);
 
@@ -255,11 +237,22 @@ export default function DemoChat() {
   async function sendTemplate(template_id: string, chat_text: string): Promise<void> {
     setBusy(true);
     setFailed(null);
+    const pid = ++pendingSeq;
+    // Optimistic echo: the user bubble + a deciding indicator render
+    // instantly — the engine round-trip never leaves dead silence.
+    setItems((prev) => [...prev, { kind: "user", text: chat_text }, { kind: "pending", id: pid }]);
     try {
       const res = await withTimeout(postChatTurn({ template_id }));
-      setItems((prev) => [...prev, { kind: "turn", turn: { ...res.turn, chat_text } }]);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.kind === "pending" && item.id === pid
+            ? { kind: "turn" as const, turn: { ...res.turn, chat_text } }
+            : item,
+        ),
+      );
     } catch (err) {
       setFailed(err instanceof Error ? err.message : String(err));
+      setItems((prev) => prev.filter((item) => !(item.kind === "pending" && item.id === pid)));
     } finally {
       setBusy(false);
     }
@@ -271,11 +264,18 @@ export default function DemoChat() {
     setInput("");
     setBusy(true);
     setFailed(null);
+    const pid = ++pendingSeq;
+    setItems((prev) => [...prev, { kind: "user", text: message }, { kind: "pending", id: pid }]);
     try {
       const res = await withTimeout(postChatTurn({ message }));
-      setItems((prev) => [...prev, { kind: "turn", turn: res.turn }]);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.kind === "pending" && item.id === pid ? { kind: "turn" as const, turn: res.turn } : item,
+        ),
+      );
     } catch (err) {
       setFailed(err instanceof Error ? err.message : String(err));
+      setItems((prev) => prev.filter((item) => !(item.kind === "pending" && item.id === pid)));
     } finally {
       setBusy(false);
     }
@@ -293,15 +293,24 @@ export default function DemoChat() {
           setItems((prev) => [...prev, beat.card ? { kind: "card", cue: beat.cue } : { kind: "cue", cue: beat.cue }]);
         } else {
           setItems((prev) => [...prev, { kind: "cue", cue: beat.cue }]);
-          const res = await withTimeout(postChatTurn({ template_id: beat.template_id }));
           const label = bootstrap?.templates.find((t) => t.id === beat.template_id)?.chat_text ?? beat.template_id;
-          setItems((prev) => [...prev, { kind: "turn", turn: { ...res.turn, chat_text: label } }]);
+          const pid = ++pendingSeq;
+          setItems((prev) => [...prev, { kind: "user", text: label }, { kind: "pending", id: pid }]);
+          const res = await withTimeout(postChatTurn({ template_id: beat.template_id }));
+          setItems((prev) =>
+            prev.map((item) =>
+              item.kind === "pending" && item.id === pid
+                ? { kind: "turn" as const, turn: { ...res.turn, chat_text: label } }
+                : item,
+            ),
+          );
         }
         await new Promise((resolve) => setTimeout(resolve, PLAY_STEP_MS));
       }
       if (!playAbort.current) router.push("/network");
     } catch (err) {
       setFailed(err instanceof Error ? err.message : String(err));
+      setItems((prev) => prev.filter((item) => item.kind !== "pending"));
     } finally {
       setPlaying(false);
     }
@@ -309,6 +318,9 @@ export default function DemoChat() {
 
   const providerOn = bootstrap?.provider.configured ?? false;
   const toolsCount = bootstrap?.tools.connected;
+  const allTemplates = bootstrap?.templates ?? [];
+  const pinned = allTemplates.filter((t) => (PINNED_TEMPLATE_IDS as readonly string[]).includes(t.id));
+  const visible = showAll ? allTemplates : pinned.length > 0 ? pinned : allTemplates;
 
   return (
     <div className="section-pad" style={{ maxWidth: 880, margin: "0 auto" }}>
@@ -386,6 +398,31 @@ export default function DemoChat() {
                   </p>
                 );
               }
+              if (item.kind === "user") {
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <div
+                      style={{
+                        border: "1px solid #3a3a3a",
+                        borderRadius: 8,
+                        padding: "10px 14px",
+                        maxWidth: "80%",
+                        fontSize: 14,
+                        color: "#e8e8e8",
+                      }}
+                    >
+                      {item.text}
+                    </div>
+                  </div>
+                );
+              }
+              if (item.kind === "pending") {
+                return (
+                  <p key={i} className="mono" style={{ fontSize: 11, letterSpacing: "0.14em", color: "#5a5a5a" }}>
+                    DECIDING — CALLING GATEWAY…
+                  </p>
+                );
+              }
               return <TurnView key={i} turn={item.turn} />;
             })}
             {failed && (
@@ -403,7 +440,7 @@ export default function DemoChat() {
           SCENARIOS
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {(bootstrap?.templates ?? []).map((t) => (
+          {visible.map((t) => (
             <button
               key={t.id}
               onClick={() => sendTemplate(t.id, t.chat_text)}
@@ -415,6 +452,16 @@ export default function DemoChat() {
               {t.label.toUpperCase()}
             </button>
           ))}
+          {allTemplates.length > pinned.length && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              disabled={busy || playing}
+              className="mono btn-outline"
+              style={{ background: "transparent", cursor: "pointer" }}
+            >
+              {showAll ? "− FEWER" : `+ ${allTemplates.length - pinned.length} MORE SCENARIOS`}
+            </button>
+          )}
         </div>
       </div>
 

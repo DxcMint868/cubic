@@ -200,13 +200,32 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
       {profile && (
         <div style={{ marginTop: 20, display: "grid", gap: 20 }}>
           <Panel title="AGENT — IDENTITY & REPUTATION">
-            <div className="mono" style={{ display: "grid", gap: 8, fontSize: 11, color: "#c9c9c9" }}>
+            <div className="mono" style={{ display: "grid", gap: 10, fontSize: 11, color: "#c9c9c9" }}>
               <div>
                 ERC-8004 <span style={{ color: "#5a5a5a" }}>·</span>{" "}
                 {profile.erc8004_identity ?? "none — static reputation applies"}
               </div>
-              <div>
-                REPUTATION <span style={{ color: "#5a5a5a" }}>·</span> {profile.reputation.score.toFixed(2)}{" "}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span>REPUTATION · {profile.reputation.score.toFixed(2)}</span>
+                <span
+                  style={{
+                    display: "inline-block",
+                    height: 6,
+                    width: 120,
+                    background: "#1f1f1f",
+                    borderRadius: 3,
+                    overflow: "hidden",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "block",
+                      height: "100%",
+                      width: `${Math.round(profile.reputation.score * 100)}%`,
+                      background: "#f4f4f4",
+                    }}
+                  />
+                </span>
                 <span style={{ color: "#5a5a5a" }}>
                   ({profile.reputation.source === "agent0-subgraph"
                     ? `live — Agent0 subgraph, ${profile.reputation.identity}`
@@ -215,6 +234,28 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
                       : "no on-chain identity — static default"})
                 </span>
               </div>
+              {profile.reputation.source === "agent0-subgraph" && (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div>
+                    VALIDATION <span style={{ color: "#5a5a5a" }}>·</span>{" "}
+                    {profile.reputation.validation.toUpperCase()}{" "}
+                    <span style={{ color: "#5a5a5a" }}>· {profile.reputation.feedbackCount} feedback rows</span>
+                  </div>
+                  {profile.reputation.capabilities.length > 0 && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <span style={{ color: "#5a5a5a" }}>ON-CHAIN CAPS</span>
+                      {profile.reputation.capabilities.slice(0, 8).map((cap) => (
+                        <Tag key={cap}>{cap}</Tag>
+                      ))}
+                    </div>
+                  )}
+                  <div>
+                    <a href={profile.subgraph_docs_url} target="_blank" rel="noreferrer" className="link">
+                      SUBGRAPH DATA — VERIFY ON THE GRAPH →
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
           </Panel>
 

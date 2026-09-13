@@ -58,6 +58,7 @@ const highTrust: AgentTrust = {
   reputation: 0.95,
   validation: "passed",
   capabilities: ["github.get_pull_request"],
+  feedbackCount: 1,
 };
 
 const subgraphPayload = (
@@ -231,6 +232,7 @@ describe("plan-07 graph context", () => {
         reputation: 0.9,
         validation: "passed", // COMPLETED + response 90/100 → passed
         capabilities: ["github.get_pull_request", "risk-analysis"],
+        feedbackCount: 1, // one feedback row in the mocked payload
       });
       expect(second).toEqual(first);
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -355,6 +357,7 @@ describe("plan-07 graph context", () => {
       reputation: 0.95,
       validation: "unknown",
       capabilities: [],
+      feedbackCount: 0,
     }));
     const staticProvider = new StaticContextProvider();
     const [graphFacts, staticFacts] = await Promise.all([

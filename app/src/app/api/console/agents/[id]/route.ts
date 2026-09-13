@@ -40,14 +40,23 @@ interface Reputation {
   score: number;
   source: "agent0-subgraph" | "offline-fallback" | "static";
   identity: string | null;
+  validation: "passed" | "failed" | "unknown";
+  capabilities: string[];
+  feedbackCount: number;
 }
 
+// Verified URL (PROJECT.md §17 links): the Agent0 subgraph docs — the
+// per-agent explorer deep link format is not pinned, so link docs, never a
+// fabricated explorer URL.
+const SUBGRAPH_DOCS_URL = "https://thegraph.com/docs/en/subgraphs/existing-subgraphs/agent0/";
+
 // Same semantics as AutoContextProvider: a real identity + graph config reads
-// the live subgraph; anything else is the labeled static default. Never throws.
+// the live subgraph (full trust object); anything else is the labeled static
+// default. Never throws.
 async function readReputation(identity: string | null): Promise<Reputation> {
   if (identity && (config().AGENT0_SUBGRAPH_URL || config().THEGRAPH_API_KEY)) {
     try {
-      const lookup = new Promise<{ reputation: number }>((resolve, reject) => {
+      const lookup = new Promise<{ reputation: number; validation: Reputation["validation"]; capabilities: string[]; feedbackCount: number }>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("reputation lookup timed out")), 5000);
         new HttpAgent0Client()
           .lookup(identity)
@@ -61,12 +70,19 @@ async function readReputation(identity: string | null): Promise<Reputation> {
           });
       });
       const trust = await lookup;
-      return { score: trust.reputation, source: "agent0-subgraph", identity };
+      return {
+        score: trust.reputation,
+        source: "agent0-subgraph",
+        identity,
+        validation: trust.validation,
+        capabilities: trust.capabilities,
+        feedbackCount: trust.feedbackCount,
+      };
     } catch {
-      return { score: NEUTRAL_REPUTATION, source: "offline-fallback", identity };
+      return { score: NEUTRAL_REPUTATION, source: "offline-fallback", identity, validation: "unknown", capabilities: [], feedbackCount: 0 };
     }
   }
-  return { score: 0.95, source: "static", identity };
+  return { score: 0.95, source: "static", identity, validation: "unknown", capabilities: [], feedbackCount: 0 };
 }
 
 export async function GET(
@@ -109,6 +125,7 @@ export async function GET(
         status: agent.status,
         erc8004_identity: agent.erc8004Identity,
         reputation,
+        subgraph_docs_url: SUBGRAPH_DOCS_URL,
         granted_tools: toolRows
           .filter((t) => grants.has(t.name))
           .map((t) => ({

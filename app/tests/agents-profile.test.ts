@@ -174,7 +174,7 @@ describe("agent registry + profile API", () => {
     expect(body.data.agent_key).toBe("agent:8472");
     expect(body.data.name).toBe("deploy-agent");
     expect(body.data.erc8004_identity).toBeNull();
-    expect(body.data.reputation).toEqual({ score: 0.95, source: "static", identity: null });
+    expect(body.data.reputation).toMatchObject({ score: 0.95, source: "static", identity: null });
     expect(body.data.granted_tools.map((t) => t.name).sort()).toEqual(
       ["deploy.production", "github.get_pull_request", "github.merge_pull_request", "github.read_file", "scanner.scan", "task.complete"].sort(),
     );

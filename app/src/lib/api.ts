@@ -384,6 +384,7 @@ export interface ChatTurn {
   template_id: string | null;
   chat_text: string;
   client_label: string;
+  reply: string | null;
   task_id: string | null;
   tool: string | null;
   arguments: Record<string, unknown>;
@@ -472,7 +473,15 @@ export interface AgentProfile {
   environment: string;
   status: string;
   erc8004_identity: string | null;
-  reputation: { score: number; source: "agent0-subgraph" | "offline-fallback" | "static"; identity: string | null };
+  reputation: {
+    score: number;
+    source: "agent0-subgraph" | "offline-fallback" | "static";
+    identity: string | null;
+    validation: "passed" | "failed" | "unknown";
+    capabilities: string[];
+    feedbackCount: number;
+  };
+  subgraph_docs_url: string;
   granted_tools: AgentProfileTool[];
   ungranted_tools: AgentProfileTool[];
   soul: string | null;

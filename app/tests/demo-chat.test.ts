@@ -88,6 +88,7 @@ interface ChatTurnBody {
   template_id: string | null;
   chat_text: string;
   client_label: string;
+  reply: string | null;
   task_id: string | null;
   tool: string | null;
   arguments: Record<string, unknown>;
@@ -263,6 +264,7 @@ describe("plan-16 Play beat order", () => {
       const turn = json.data!.turn;
       expect(turn.decision).toBe(template.expect.decision);
       expect(turn.reasons[0]?.code).toBe(template.expect.reason);
+      if (template.reply) expect(turn.reply).toBe(template.reply);
       expect(turn.trace_url).toMatch(/^\/console\/tasks\//);
       expect(turn.network_url).toBe("/network");
       expect(turn.client_label).toBe("Demo agent (MCP client)");
@@ -447,5 +449,17 @@ describe("plan-16 parse.ts (pure, off-camera)", () => {
     expect(validateParsed({ tool: "github.read_file", arguments: { repo: "x" } }).tool).toBeNull();
     expect(validateParsed({ tool: null, arguments: {} }).tool).toBeNull();
     expect(validateParsed("slur or off-scope prose").tool).toBeNull();
+  });
+
+  it("passes the model-drafted reply through, drops junk", () => {
+    expect(
+      validateParsed({ tool: "task.complete", arguments: {}, reply: "Wrapping up now." }).reply,
+    ).toBe("Wrapping up now.");
+    expect(
+      validateParsed({ tool: "task.complete", arguments: {}, reply: "x".repeat(281) }).reply,
+    ).toBeUndefined();
+    expect(
+      validateParsed({ tool: "nope", arguments: {}, reply: "I can't do that." }).reply,
+    ).toBe("I can't do that.");
   });
 });

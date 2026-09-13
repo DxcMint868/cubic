@@ -53,6 +53,8 @@ export interface ChatTurn {
   template_id: string | null;
   chat_text: string;
   client_label: string;
+  /** The agent's conversational opening line (canned or model-drafted). */
+  reply: string | null;
   task_id: string | null;
   tool: string | null;
   arguments: Record<string, unknown>;
@@ -251,6 +253,7 @@ function buildTurn(base: Partial<ChatTurn> & { chat_text: string; task_id: strin
     kind: "tool",
     template_id: null,
     client_label: DEMO_CLIENT_LABEL,
+    reply: null,
     tool: null,
     arguments: {},
     transport: null,
@@ -383,6 +386,7 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
   let tool: string | null = null;
   let args: Record<string, unknown> = {};
   let kind: ChatTurn["kind"] = "tool";
+  let reply: string | null = null;
 
   if (input.template_id) {
     template = getTemplate(input.template_id);
@@ -391,11 +395,13 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
     kind = template.kind;
     tool = template.tool;
     args = { ...template.arguments };
+    reply = template.reply ?? null;
   } else if (typeof input.message === "string" && input.message.trim() !== "") {
     chatText = input.message;
     const parsed = await parseFreeText(input.message);
     tool = parsed.tool;
     args = parsed.arguments;
+    reply = parsed.reply ?? null;
     kind = tool ? "tool" : "no-tool";
   } else {
     throw new Error("chat requires template_id or a non-empty message");
@@ -409,6 +415,7 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
       kind: "no-tool",
       template_id: template?.id ?? null,
       chat_text: chatText,
+      reply,
       task_id: input.task_id ?? null,
       tool: null,
       arguments: {},
@@ -463,7 +470,7 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
 
   const data = await executeCall({ tool, args, taskId, baseUrl });
   return hydrateTurn(
-    { template_id: template?.id ?? null, chat_text: chatText, task_id: taskId, tool, arguments: args },
+    { template_id: template?.id ?? null, chat_text: chatText, reply, task_id: taskId, tool, arguments: args },
     data.data,
     data.transport,
     toolsConnected,
@@ -527,6 +534,7 @@ async function runDrainReject(input: {
       kind: "lifecycle",
       template_id: input.template.id,
       chat_text: input.chatText,
+      reply: input.template.reply ?? null,
       task_id: input.taskId,
       tool: input.tool,
       arguments: input.args,
@@ -575,6 +583,7 @@ async function runCapabilityLifecycle(input: {
       kind: "lifecycle",
       template_id: input.template.id,
       chat_text: input.chatText,
+      reply: input.template.reply ?? null,
       task_id: input.taskId,
       tool: input.tool,
       arguments: input.args,

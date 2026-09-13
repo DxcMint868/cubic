@@ -17,11 +17,17 @@ const toolSchemas: Record<string, z.ZodTypeAny> = {
   "task.complete": z.object({}).passthrough(),
 };
 
-const parsedShape = z.object({ tool: z.string(), arguments: z.record(z.string(), z.unknown()) });
+const parsedShape = z.object({
+  tool: z.string(),
+  arguments: z.record(z.string(), z.unknown()),
+  reply: z.string().max(280).optional(),
+});
 
 export interface ParsedIntent {
   tool: string | null;
   arguments: Record<string, unknown>;
+  /** Model-drafted chat line shown as the agent's reply (never a factual claim). */
+  reply?: string;
 }
 
 export function chatModel(): string {
@@ -38,16 +44,17 @@ export function parseProviderConfigured(): boolean {
 export function validateParsed(candidate: unknown): ParsedIntent {
   const parsed = parsedShape.safeParse(candidate);
   if (!parsed.success) return { tool: null, arguments: {} };
+  const reply = typeof parsed.data.reply === "string" && parsed.data.reply.trim() !== "" ? parsed.data.reply : undefined;
   const schema = toolSchemas[parsed.data.tool];
-  if (!schema) return { tool: null, arguments: {} };
+  if (!schema) return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
   const args = schema.safeParse(parsed.data.arguments);
-  if (!args.success) return { tool: null, arguments: {} };
+  if (!args.success) return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
   const out = args.data as Record<string, unknown>;
   // The model must never choose the task row (or smuggle a client
   // reasoning_ref): task routing belongs to the caller, never LLM output.
   delete out.task_id;
   delete out.reasoning_ref;
-  return { tool: parsed.data.tool, arguments: out };
+  return { tool: parsed.data.tool, arguments: out, ...(reply ? { reply } : {}) };
 }
 
 const SYSTEM_PROMPT = [
@@ -61,10 +68,20 @@ const SYSTEM_PROMPT = [
   '- "task.complete": {}',
   "If the message matches no tool, or asks for anything else (deleting repos,",
   "reading secrets, spending money, anything off the list above), reply",
-  '{"tool": null, "arguments": {}}.',
+  '{"tool": null, "arguments": {}, "reply": "<one short plain sentence saying what you can do instead>"}',
+  "Otherwise include a short 'reply' chat line (max 140 chars) narrating the action, e.g.",
+  '{"tool": "github.get_pull_request", "arguments": {"repo": "acme/backend", "pr": 421}, "reply": "On it — pulling up PR #421."}.',
 ].join("\n");
 
 const PARSE_TIMEOUT_MS = 8000;
+
+function extractReply(candidate: unknown): string | undefined {
+  if (candidate !== null && typeof candidate === "object") {
+    const reply = (candidate as { reply?: unknown }).reply;
+    if (typeof reply === "string" && reply.trim() !== "" && reply.length <= 280) return reply;
+  }
+  return undefined;
+}
 
 export interface ParseDeps {
   fetchImpl?: typeof fetch;
@@ -107,7 +124,8 @@ export async function parseFreeText(message: string, deps: ParseDeps = {}): Prom
       return { tool: null, arguments: {} };
     }
     if (candidate !== null && typeof candidate === "object" && (candidate as { tool?: unknown }).tool === null) {
-      return { tool: null, arguments: {} };
+      const reply = extractReply(candidate);
+      return { tool: null, arguments: {}, ...(reply ? { reply } : {}) };
     }
     return validateParsed(candidate);
   } catch {

@@ -7,6 +7,7 @@ export interface AgentTrust {
   reputation: number;                       // 0..1
   validation: "passed" | "failed" | "unknown";
   capabilities: string[];
+  feedbackCount: number;                    // non-revoked feedback rows seen
 }
 export interface Agent0Client {
   lookup(erc8004Identity: string): Promise<AgentTrust>;   // GraphQL over HTTPS POST + zod-validate AgentTrust
@@ -95,6 +96,7 @@ const agentTrustSchema = z.object({
   reputation: z.number().min(0).max(1),
   validation: z.enum(["passed", "failed", "unknown"]),
   capabilities: z.array(z.string()),
+  feedbackCount: z.number().int().min(0),
 });
 
 // Feedback `value` is the ERC-8004 documented 0–100 score; normalize
@@ -141,6 +143,7 @@ function toTrust(agent: {
       ...strings(agent.registrationFile?.mcpTools),
       ...strings(agent.registrationFile?.a2aSkills),
     ],
+    feedbackCount: agent.feedback.length,
   };
 }
 
