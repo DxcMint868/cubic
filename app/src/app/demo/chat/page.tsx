@@ -14,6 +14,7 @@ import MacWindow from "@/components/MacWindow";
 import { PLAY_BEATS, PINNED_TEMPLATE_IDS } from "@/server/demo/templates";
 import {
   getChatBootstrap,
+  pollApprovalFollowUp,
   postChatTurn,
   type ChatBootstrap,
   type ChatResponse,
@@ -185,6 +186,9 @@ function TurnView({ turn }: { turn: ChatTurn }) {
               turn.approval.provider === "dev" ? "DEV (stand-in)" : turn.approval.provider.toUpperCase()
             } · ${turn.approval.status}`}
             {turn.approval_outcome === "rejected" ? " — the approver rejected it" : ""}
+            {turn.decision === "escalate" && turn.approval.status === "pending" && !turn.approval_outcome
+              ? " — awaiting approval in /console/approvals · this turn updates live"
+              : ""}
           </p>
         )}
         {turn.receipt && (
@@ -296,6 +300,48 @@ function describeFailure(err: unknown): string {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [items]);
 
+  // Post-approval live update: an escalated turn renders "awaiting approval"
+  // and this poll watches the approval row. When the right-side console
+  // resolves it, the turn patches in place — approved: execution summary +
+  // agent follow-up; rejected: the rejection line. Stops after 5 minutes.
+  function watchApproval(turnId: string, approvalId: string, message: string, tool: string | null, agentKey: string): void {
+    if (!tool) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (attempts > 100) {
+        clearInterval(timer);
+        return;
+      }
+      pollApprovalFollowUp({ approval_id: approvalId, message, tool, agent_key: agentKey })
+        .then((poll) => {
+          if (poll.status === "pending") return;
+          clearInterval(timer);
+          setItems((prev) =>
+            prev.map((item) => {
+              if (item.kind !== "turn" || item.turn.task_id !== turnId || item.turn.approval?.id !== approvalId) {
+                return item;
+              }
+              const turn = { ...item.turn };
+              turn.approval = turn.approval ? { ...turn.approval, status: poll.status } : turn.approval;
+              if (poll.outcome === "rejected") {
+                turn.approval_outcome = "rejected";
+                turn.lines = { ...turn.lines, execution: "no capability, no execution — the approver rejected it" };
+              } else if (poll.outcome === "approved") {
+                turn.approval_outcome = "approved";
+                if (poll.execution_summary) {
+                  turn.lines = { ...turn.lines, execution: poll.execution_summary };
+                }
+                if (poll.follow_up) turn.follow_up = poll.follow_up;
+              }
+              return { ...item, turn };
+            }),
+          );
+        })
+        .catch(() => undefined);
+    }, 3000);
+  }
+
   async function sendTemplate(template_id: string, chat_text: string): Promise<void> {
     setBusy(true);
     setFailed(null);
@@ -319,6 +365,20 @@ function describeFailure(err: unknown): string {
             : item,
         ),
       );
+      if (
+        res.turn.decision === "escalate" &&
+        res.turn.approval?.id &&
+        res.turn.approval.status === "pending" &&
+        res.turn.task_id
+      ) {
+        watchApproval(
+          res.turn.task_id,
+          res.turn.approval.id,
+          chat_text,
+          res.turn.tool,
+          agentOverride ?? bootstrap?.agents[0]?.agent_key ?? "agent:8472",
+        );
+      }
     } catch (err) {
       setFailed(describeFailure(err));
       setItems((prev) => prev.filter((item) => !(item.kind === "pending" && item.id === pid)));
@@ -349,6 +409,20 @@ function describeFailure(err: unknown): string {
           item.kind === "pending" && item.id === pid ? { kind: "turn" as const, turn: res.turn } : item,
         ),
       );
+      if (
+        res.turn.decision === "escalate" &&
+        res.turn.approval?.id &&
+        res.turn.approval.status === "pending" &&
+        res.turn.task_id
+      ) {
+        watchApproval(
+          res.turn.task_id,
+          res.turn.approval.id,
+          message,
+          res.turn.tool,
+          agentOverride ?? bootstrap?.agents[0]?.agent_key ?? "agent:8472",
+        );
+      }
     } catch (err) {
       setFailed(describeFailure(err));
       setItems((prev) => prev.filter((item) => !(item.kind === "pending" && item.id === pid)));

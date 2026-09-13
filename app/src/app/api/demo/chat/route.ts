@@ -7,11 +7,13 @@
 // or failures → {tool: null} → display-only no-tool state, gateway never
 // called). agent_key speaks as another demo agent; a pinned task from a
 // different agent's session mints fresh instead of merging. Returns {intent,
-// decision, trace_url, network_url} in the standard envelope. GET returns the
-// template catalog (with owning agent_key) + demo agents + provider status +
-// tools chip count (single source of truth for the chat page).
+// decision, trace_url, network_url} in the standard envelope. GET without
+// params returns the template catalog (with owning agent_key) + demo agents
+// + provider status + tools chip count (single source of truth for the chat
+// page). GET with ?approval_id=&message=&tool=[&agent_key=] polls a resolved
+// approval for the post-approval follow-up (execution summary + synthesis).
 import { z } from "zod";
-import { CHAT_TEMPLATES, listDemoAgents, mcpToolCount, runChatTurn } from "@/server/demo/chat";
+import { approvalFollowUp, CHAT_TEMPLATES, listDemoAgents, mcpToolCount, runChatTurn } from "@/server/demo/chat";
 import { chatModel, parseProviderConfigured } from "@/server/demo/parse";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +31,27 @@ function baseUrlOf(request: Request): string {
 
 export async function GET(request: Request) {
   try {
+    const url = new URL(request.url);
+    const approvalId = url.searchParams.get("approval_id");
+    if (approvalId) {
+      const message = url.searchParams.get("message") ?? "";
+      const tool = url.searchParams.get("tool") ?? "";
+      const agentKey = url.searchParams.get("agent_key") ?? "agent:8472";
+      if (!z.string().uuid().safeParse(approvalId).success || message === "" || tool === "") {
+        return Response.json(
+          { ok: false, error: { code: "INVALID_REQUEST", message: "approval poll requires approval_id (uuid), message, and tool" } },
+          { status: 400 },
+        );
+      }
+      const status = await approvalFollowUp(approvalId, { message, tool, agentKey });
+      if (!status) {
+        return Response.json(
+          { ok: false, error: { code: "INVALID_REQUEST", message: `approval not found: ${approvalId}` } },
+          { status: 404 },
+        );
+      }
+      return Response.json({ ok: true, data: status });
+    }
     const tools = await mcpToolCount(baseUrlOf(request)).catch(() => null);
     return Response.json({
       ok: true,

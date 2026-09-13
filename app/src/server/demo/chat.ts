@@ -19,7 +19,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { config } from "../config";
 import { db } from "../db/client";
-import { agents, auditEvents, decisions, intents, policies, tasks, tenants, tools } from "../db/schema";
+import { agents, approvals, auditEvents, capabilities, decisions, executions, intents, policies, tasks, tenants, tools } from "../db/schema";
 import type { NormalizedIntent } from "../domain";
 import { runToolCall, type ToolCallData } from "../gateway/orchestrator";
 import { consumeCapability } from "../capability/verify";
@@ -410,6 +410,59 @@ export async function listDemoAgents(): Promise<DemoAgentSummary[]> {
     .where(eq(agents.tenantId, tenant.id))
     .orderBy(asc(agents.createdAt));
   return rows.map((a) => ({ agent_key: a.agentKey, name: a.name }));
+}
+
+export interface ApprovalStatus {
+  approval_id: string;
+  status: "pending" | "approved" | "rejected" | string;
+  outcome: "approved" | "rejected" | null;
+  /** Post-approval execution summary (approved + executed only). */
+  execution_summary: string | null;
+  /** Agent follow-up answering the original request (approved + executed only). */
+  follow_up: string | null;
+}
+
+// Post-approval poll target: after the right-side console resolves an
+// escalated chat turn, the left side picks up the outcome here — execution
+// summary + synthesized follow-up — and renders it in place. Rejected or
+// still-pending approvals carry nulls (the turn's enforcement display
+// stands). Never throws for unknown ids (returns null).
+export async function approvalFollowUp(
+  approvalId: string,
+  input: { message: string; tool: string; agentKey: string },
+): Promise<ApprovalStatus | null> {
+  const tenant = await resolveTenant();
+  const [approval] = await db().select().from(approvals).where(eq(approvals.id, approvalId));
+  if (!approval) return null;
+  if (approval.status === "pending") {
+    return { approval_id: approval.id, status: "pending", outcome: null, execution_summary: null, follow_up: null };
+  }
+  const outcome = approval.status === "approved" ? "approved" : "rejected";
+  if (outcome !== "approved") {
+    return { approval_id: approval.id, status: approval.status, outcome, execution_summary: null, follow_up: null };
+  }
+  // Approved: find the execution via the decision → capability chain.
+  const [decisionRow] = await db().select().from(decisions).where(eq(decisions.id, approval.decisionId));
+  let summary: string | null = null;
+  if (decisionRow) {
+    const [capRow] = await db().select().from(capabilities).where(eq(capabilities.decisionId, decisionRow.id));
+    if (capRow) {
+      const [execRow] = await db().select().from(executions).where(eq(executions.capabilityId, capRow.id));
+      if (execRow?.status === "succeeded") summary = execRow.resultSummary;
+    }
+  }
+  if (!summary) {
+    return { approval_id: approval.id, status: approval.status, outcome, execution_summary: null, follow_up: null };
+  }
+  const [actor] = await db()
+    .select()
+    .from(agents)
+    .where(and(eq(agents.tenantId, tenant.id), eq(agents.agentKey, input.agentKey)));
+  const identity = actor
+    ? await loadAgentIdentity(input.agentKey, actor.name, (actor.declaredCapabilities ?? []) as string[])
+    : { key: input.agentKey, name: input.agentKey, soul: null, memory: null, tools: [] as string[] };
+  const followUp = await synthesizeFollowUp(input.message, input.tool, summary, { agent: identity });
+  return { approval_id: approval.id, status: approval.status, outcome, execution_summary: summary, follow_up: followUp };
 }
 
 export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<ChatTurn> {

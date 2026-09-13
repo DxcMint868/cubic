@@ -468,6 +468,31 @@ export function getChatBootstrap(): Promise<ChatBootstrap> {
   return request<ChatBootstrap>("/api/demo/chat");
 }
 
+export interface ApprovalPoll {
+  approval_id: string;
+  status: string;
+  outcome: "approved" | "rejected" | null;
+  execution_summary: string | null;
+  follow_up: string | null;
+}
+
+// Post-approval poll: after the console resolves an escalated chat turn,
+// pick up the outcome (execution summary + agent follow-up) for in-place render.
+export function pollApprovalFollowUp(input: {
+  approval_id: string;
+  message: string;
+  tool: string;
+  agent_key?: string;
+}): Promise<ApprovalPoll> {
+  const params = new URLSearchParams({
+    approval_id: input.approval_id,
+    message: input.message,
+    tool: input.tool,
+    ...(input.agent_key ? { agent_key: input.agent_key } : {}),
+  });
+  return request<ApprovalPoll>(`/api/demo/chat?${params}`);
+}
+
 export function postChatTurn(input: {
   message?: string;
   template_id?: string;

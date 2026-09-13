@@ -111,6 +111,7 @@ interface ChatTurnBody {
   payment_required: { price_usd_cents: number } | null;
   lines: Record<string, string>;
   receipt: { amount_usd_cents: number; network: string; ref: string; ref_kind: string } | null;
+  follow_up: string | null;
   rejections: Array<{ step: string; reason: string; capability_id: string }>;
   anchors: Array<{ event_type: string; fingerprint: string; topic_id: string | null; topic_url: string | null }>;
   trace_url: string | null;
@@ -739,5 +740,84 @@ describe("plan-16 post-tool synthesis (mocked provider)", () => {
     const turn = json.data!.turn;
     expect(turn.decision).toBe("allow");
     expect(turn.follow_up).toBeNull();
+  }, 60000);
+});
+
+describe("plan-16 approval poll (escalate → resolve → follow-up)", () => {
+  it("pending approval polls pending; approved polls execution + follow_up null without provider", async () => {
+    // deploy-merge escalates (high-risk merge needs approval).
+    const { json } = await chat({ template_id: "deploy-merge" });
+    expect(json.ok).toBe(true);
+    const turn = json.data!.turn;
+    expect(turn.decision).toBe("escalate");
+    const approvalId = turn.approval!.id;
+
+    // Still pending → poll says pending, no follow-up.
+    const pending = await chatGET(
+      new Request(`${loopback}/api/demo/chat?approval_id=${approvalId}&message=${encodeURIComponent(turn.chat_text)}&tool=${turn.tool}`),
+    );
+    const pendingBody = (await pending.json()) as { ok: boolean; data: { status: string; outcome: null; follow_up: null } };
+    expect(pendingBody.ok).toBe(true);
+    expect(pendingBody.data.status).toBe("pending");
+    expect(pendingBody.data.follow_up).toBeNull();
+
+    // Resolve approved through the real route → execution runs.
+    const { POST: resolvePOST } = await import("../src/app/api/approvals/[id]/resolve/route");
+    const res = await resolvePOST(
+      new Request("http://test/api/approvals/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome: "approved", resolved_by: "test-operator" }),
+      }),
+      { params: Promise.resolve({ id: approvalId }) },
+    );
+    const resolved = (await res.json()) as { ok: boolean; data: { execution: { status: string } | null } };
+    expect(resolved.ok).toBe(true);
+    expect(resolved.data.execution?.status).toBe("succeeded");
+
+    // Poll again → approved with execution summary; follow_up null (no provider in tests).
+    const done = await chatGET(
+      new Request(`${loopback}/api/demo/chat?approval_id=${approvalId}&message=${encodeURIComponent(turn.chat_text)}&tool=${turn.tool}`),
+    );
+    const doneBody = (await done.json()) as {
+      ok: boolean;
+      data: { status: string; outcome: string; execution_summary: string | null; follow_up: string | null };
+    };
+    expect(doneBody.ok).toBe(true);
+    expect(doneBody.data.status).toBe("approved");
+    expect(doneBody.data.outcome).toBe("approved");
+    expect(doneBody.data.execution_summary).toContain("Merged PR #421");
+    expect(doneBody.data.follow_up).toBeNull();
+  }, 60000);
+
+  it("rejected approval polls rejected with nulls", async () => {
+    const { json } = await chat({ template_id: "deploy-run" });
+    expect(json.ok).toBe(true);
+    const approvalId = json.data!.turn.approval!.id;
+    const { POST: resolvePOST } = await import("../src/app/api/approvals/[id]/resolve/route");
+    await resolvePOST(
+      new Request("http://test/api/approvals/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome: "rejected", resolved_by: "test-operator" }),
+      }),
+      { params: Promise.resolve({ id: approvalId }) },
+    );
+    const done = await chatGET(
+      new Request(`${loopback}/api/demo/chat?approval_id=${approvalId}&message=x&tool=github.merge_pull_request`),
+    );
+    const doneBody = (await done.json()) as { ok: boolean; data: { outcome: string; follow_up: null; execution_summary: null } };
+    expect(doneBody.data.outcome).toBe("rejected");
+    expect(doneBody.data.follow_up).toBeNull();
+    expect(doneBody.data.execution_summary).toBeNull();
+  }, 60000);
+
+  it("unknown approval id → 404, bad params → 400", async () => {
+    const missing = await chatGET(
+      new Request(`${loopback}/api/demo/chat?approval_id=00000000-0000-0000-0000-000000000000&message=x&tool=y`),
+    );
+    expect(missing.status).toBe(404);
+    const bad = await chatGET(new Request(`${loopback}/api/demo/chat?approval_id=not-a-uuid`));
+    expect(bad.status).toBe(400);
   }, 60000);
 });
