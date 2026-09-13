@@ -164,17 +164,34 @@ afterAll(async () => {
   delete (globalThis as Record<string, unknown>).__cubicConfig;
 }, 120000);
 
-describe("council threshold (2-of-2 treasury-council)", () => {
+describe("council threshold (treasury-council multisig)", () => {
   it.skipIf(!hasKeys)("first member collects (202), second completes", async () => {
+    // Threshold follows seeded membership (1 when a lone key, 2 when both).
+    const list = (await (await councilsGET()).json()) as {
+      ok: boolean;
+      data: Array<{ name: string; threshold: number }>;
+    };
+    const threshold = list.data.find((c) => c.name === "treasury-council")!.threshold;
+    expect([1, 2]).toContain(threshold);
+
     const approvalId = await escalateSwap();
     const owner = ownerAccount();
-    const client = clientAccount();
 
     const first = await resolve(approvalId, {
       outcome: "approved",
       signature: await owner.signMessage({ message: approvalSignMessage(approvalId, "approved") }),
       signer: owner.address,
     });
+    if (threshold === 1) {
+      const done = (await first.json()) as {
+        ok: boolean;
+        data: { capability: { action: string } | null; execution: { status: string } | null };
+      };
+      expect(done.ok).toBe(true);
+      expect(done.data.capability?.action).toBe("treasury_swap");
+      expect(done.data.execution?.status).toBe("succeeded");
+      return;
+    }
     expect(first.status).toBe(202);
     const collecting = (await first.json()) as {
       ok: boolean;
@@ -182,6 +199,8 @@ describe("council threshold (2-of-2 treasury-council)", () => {
     };
     expect(collecting.data).toMatchObject({ status: "collecting", council: "treasury-council", threshold: 2, collected: 1 });
 
+    // Second member completes (threshold 2 implies the client key exists).
+    const client = clientAccount();
     const second = await resolve(approvalId, {
       outcome: "approved",
       signature: await client.signMessage({ message: approvalSignMessage(approvalId, "approved") }),
@@ -201,11 +220,18 @@ describe("council threshold (2-of-2 treasury-council)", () => {
 
   it.skipIf(!hasKeys)("member reject vetoes at once, no second signature needed", async () => {
     const approvalId = await escalateSwap();
-    const client = clientAccount();
+    // Any seeded member's reject vetoes at once (threshold-independent).
+    const list = (await (await councilsGET()).json()) as {
+      ok: boolean;
+      data: Array<{ name: string; members: string[] }>;
+    };
+    const member = list.data.find((c) => c.name === "treasury-council")!.members[0];
+    const signer =
+      member.toLowerCase() === ownerAccount().address.toLowerCase() ? ownerAccount() : clientAccount();
     const res = await resolve(approvalId, {
       outcome: "rejected",
-      signature: await client.signMessage({ message: approvalSignMessage(approvalId, "rejected") }),
-      signer: client.address,
+      signature: await signer.signMessage({ message: approvalSignMessage(approvalId, "rejected") }),
+      signer: signer.address,
     });
     const body = (await res.json()) as { ok: boolean; data: { approval_outcome: string; capability: null; execution: null } };
     expect(body.ok).toBe(true);
@@ -226,7 +252,8 @@ describe("council registry + rule assignment APIs", () => {
     expect(names).toContain("treasury-council");
     expect(names).toContain("deploy-council");
     const treasury = list.data.find((c) => c.name === "treasury-council")!;
-    expect(treasury.threshold).toBe(2);
+    // Threshold follows seeded membership (1-of-1 with a lone key, 2-of-2 with both).
+    expect([1, 2]).toContain(treasury.threshold);
     expect(treasury.safe_address).toBeNull();
 
     const created = await councilsPOST(
