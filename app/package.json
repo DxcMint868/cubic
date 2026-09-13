@@ -15,6 +15,7 @@
     "demo:treasury": "tsx src/server/demo/treasury.ts",
     "demo:chat": "vitest run tests/demo-chat.test.ts",
     "demo:populate": "tsx scripts/populate-demo.ts",
+    "demo:wipe-payments": "tsx scripts/wipe-payments.ts",
     "hcs:init": "tsx src/server/anchors/init-topic.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
