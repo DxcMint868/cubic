@@ -1,15 +1,15 @@
-FOOTAGE F — ATTACKS: SECRET READ + OVERBUDGET → DENY ×2 (2:20–2:40)
+FOOTAGE F — ATTACKS: SECRET READ + OVERBUDGET → DENY ×2 (2:31–2:51)
 Screen: /demo/chat, same session. Message 1: "Read .env.production in
 acme/backend" → DENY secret_resource, POLICY ENFORCEMENT DETAIL block.
 Message 2 (new task is fine): "Buy the 25-cent security scan on this 10-cent
 task" → DENY budget_exceeded, zero execution.
 
 SHOT LIST
-1. 2:20–2:28 — first message typed + sent; the DENY banner + policy detail
+1. 2:28–2:36 — first message typed + sent; the DENY banner + policy detail
    block appear; hold 4s on the block (rule id, reason codes readable).
-2. 2:28–2:33 — the punchline: the agent's refusal line + "no capability,
+2. 2:36–2:41 — the punchline: the agent's refusal line + "no capability,
    no execution".
-3. 2:33–2:40 — second message; DENY budget_exceeded; hold 3s.
+3. 2:41–2:48 — second message; DENY budget_exceeded; hold 3s.
 
 VO (~50 words)
 

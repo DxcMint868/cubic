@@ -1,13 +1,13 @@
-FOOTAGE C — CHAT: FREE TEXT → ALLOW (0:45–1:10)
+FOOTAGE C — CHAT: FREE TEXT → ALLOW (0:56–1:21)
 Screen: /demo/chat. Speaker: deploy-agent. Type free text: "Read PR #421 in
 acme/backend" → send. Show: THINKING dots → user bubble → agent reply line →
 verbatim intent JSON → ALLOW banner → trace link.
 
 SHOT LIST
-1. 0:45–0:52 — typing the message; show the input clearly.
-2. 0:52–1:00 — send; THINKING dots; agent reply appears.
-3. 1:00–1:08 — scroll so the intent JSON + ALLOW banner are framed; hold 4s.
-4. 1:08–1:10 — cursor drifts to TRACE link (no click; the trace beat is H).
+1. 0:53–1:00 — typing the message; show the input clearly.
+2. 1:00–1:08 — send; THINKING dots; agent reply appears.
+3. 1:08–1:16 — scroll so the intent JSON + ALLOW banner are framed; hold 4s.
+4. 1:16–1:18 — cursor drifts to TRACE link (no click; the trace beat is H).
 
 VO (~60 words)
 

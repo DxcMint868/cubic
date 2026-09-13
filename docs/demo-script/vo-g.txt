@@ -1,4 +1,4 @@
-FOOTAGE G — REPUTATION: LAB-1 → GRAPH PLAYGROUND + QUICKNODE (2:40–3:05)
+FOOTAGE G — REPUTATION: LAB-1 → GRAPH PLAYGROUND + QUICKNODE (2:51–3:16)
 THE GRAPH BEAT. Two live external surfaces, preloaded BEFORE rolling:
 (a) The Graph playground with the agent query for 8453:74108 already run,
 raw feedback rows visible; (b) QuickNode agent page
@@ -7,11 +7,11 @@ beauty shot if time allows. Console: /console/agents → lab-1 profile first,
 then cut to the playground.
 
 SHOT LIST
-1. 2:40–2:48 — chat: "As lab-1: read PR #421" → ESCALATE
+1. 2:48–2:56 — chat: "As lab-1: read PR #421" → ESCALATE
    reputation_below_threshold. Hold on the banner.
-2. 2:48–2:56 — /console/agents → lab-1 profile: reputation bar ~0.10,
+2. 2:56–3:04 — /console/agents → lab-1 profile: reputation bar ~0.10,
    SUBGRAPH DATA link visible.
-3. 2:56–3:05 — Graph playground: the same identity, the same negative
+3. 3:04–3:13 — Graph playground: the same identity, the same negative
    feedback — raw, on The Graph's infra. STILL 4s. (Optional 2s of the
    QuickNode page if the take is smooth.)
 

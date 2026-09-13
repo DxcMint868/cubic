@@ -1,4 +1,4 @@
-FOOTAGE D — X402: 402 → PURCHASE → PAYMENTS → HASHSCAN (1:10–1:45)
+FOOTAGE D — X402: 402 → PURCHASE → PAYMENTS → HASHSCAN (1:21–1:56)
 THE HEDERA BEAT. Screen: /demo/chat (same session), then /console/payments,
 then hashscan.io. Sequence: free text "run the security scan on PR #421" →
 402 discovery (payment required line) → the purchase completes → payment
@@ -6,13 +6,13 @@ completed one-liner + receipt → cut to Payments console → click the
 settlement ref → HashScan transaction page (real HBAR transfer, 25¢).
 
 SHOT LIST
-1. 1:10–1:18 — send the scan message; THINKING; the payment-required line
+1. 1:18–1:26 — send the scan message; THINKING; the payment-required line
    appears ("payment required $0.25 · hedera").
-2. 1:18–1:26 — the settled turn: payment completed one-liner with short ref;
+2. 1:26–1:34 — the settled turn: payment completed one-liner with short ref;
    hold 3s.
-3. 1:26–1:34 — cut to /console/payments: settled total ticks, the new row on
+3. 1:34–1:42 — cut to /console/payments: settled total ticks, the new row on
    top. Cursor to the settlement ref (now a link).
-4. 1:34–1:45 — click → HashScan transaction page. STILL. Let the judge read:
+4. 1:42–1:53 — click → HashScan transaction page. STILL. Let the judge read:
    transfers, timestamp, account ids. No scrolling needed; zoom if legal.
 
 VO (~75 words)
