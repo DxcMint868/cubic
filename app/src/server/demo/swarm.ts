@@ -13,7 +13,7 @@ import { runToolCall } from "../gateway/orchestrator";
 
 export const SWARM_SIZE = 8;
 
-export const SWARM_CAPABILITIES = ["github.get_pull_request", "github.read_file", "scanner.scan"];
+export const SWARM_CAPABILITIES = ["github.get_pull_request", "github.read_file", "scanner.scan", "github.merge_pull_request", "deploy.production", "task.complete"];
 
 interface SwarmCall {
   tool: string;

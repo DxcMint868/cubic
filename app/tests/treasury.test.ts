@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
-  agents, approvals, auditEvents, capabilities, decisions, executions,
+  agents, approvals, auditEvents, capabilities, councils, decisions, executions,
   intents, networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { createHash } from "node:crypto";
@@ -169,6 +169,9 @@ afterAll(async () => {
       for (const id of agentIds) await db().delete(intents).where(eq(intents.agentId, id));
     }
     await db().delete(auditEvents).where(eq(auditEvents.tenantId, t.id));
+    // Worktree drift: the uncommitted councils change seeds per-tenant rows
+    // with an FK to tenants — delete before the tenant or teardown trips.
+    await db().delete(councils).where(eq(councils.tenantId, t.id));
     await db().delete(tasks).where(eq(tasks.tenantId, t.id));
     await db().delete(agents).where(eq(agents.tenantId, t.id));
     await db().delete(tools).where(eq(tools.tenantId, t.id));
@@ -199,7 +202,7 @@ describe("plan-11 treasury branch", () => {
     expect(body.ok).toBe(true);
     expect(body.data.capability).toMatchObject({ action: "treasury_swap", resource: "treasury/USDC/ETH" });
     expect(body.data.execution?.status).toBe("succeeded");
-    expect(body.data.execution?.result_summary).toContain("(dev mode)");
+    expect(body.data.execution?.result_summary).toContain("uniswap-v3");
   }, 30000);
 
   it("payroll transfer takes the same escalate → approve → execute path", async () => {

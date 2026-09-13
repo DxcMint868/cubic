@@ -21,14 +21,14 @@ export const payloadSchemas: Record<EventType, z.ZodTypeAny> = {
   "policy.evaluated": z.object({ intent_id: uuid, decision_id: uuid, decision: dec, matched_policy: z.string(), matched_rule_id: z.string(), reason_codes: z.array(z.string()), risk_score: z.number().int() }),
   "capability.issued": z.object({ capability_id: uuid, decision_id: uuid, subject: z.string(), action: z.string(), resource: z.string(), budget_usd_cents: z.number().int().nullable(), expires_at: z.string(), nonce: z.string().length(64), policy_hash: z.string() }),
   "capability.denied": z.object({ intent_id: uuid, decision_id: uuid, reason_codes: z.array(z.string()) }),
-  "capability.escalated": z.object({ intent_id: uuid, decision_id: uuid, approval_id: uuid, reason_codes: z.array(z.string()) }),
+  "capability.escalated": z.object({ intent_id: uuid, decision_id: uuid, approval_id: uuid, reason_codes: z.array(z.string()), council: z.string().optional() }),
   "capability.consumed": z.object({ capability_id: uuid, execution_id: uuid.nullable() }),
   "capability.rejected": z.object({ capability_id: uuid.nullable(), reason: z.enum(["not_found", "replay", "expired", "action_mismatch", "resource_mismatch", "budget_exceeded"]), requested_action: z.string().nullable(), requested_resource: z.string().nullable() }),
   // plan-13 contract addendum (sanctioned, same precedent as resolved_by):
   // revokes are no longer DB-only — every revoke path emits this.
   "capability.revoked": z.object({ capability_id: uuid, reason: z.string() }),
-  "ledger.approval.requested": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), action: z.string(), resource: z.string() }),
-  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().optional() }),
+  "ledger.approval.requested": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), action: z.string(), resource: z.string(), council: z.string().optional() }),
+  "ledger.approval.completed": z.object({ approval_id: uuid, decision_id: uuid, provider: z.enum(["dev", "ledger"]), outcome: z.enum(["approved", "rejected"]), resolved_by: z.string().optional(), signer: z.string().optional(), signature: z.string().optional(), council: z.string().optional(), signatures: z.array(z.object({ signer: z.string(), signature: z.string() })).optional(), council_bypass: z.string().optional() }),
   "payment.requested": z.object({ payment_id: uuid, capability_id: uuid, service: z.string(), network: z.literal("hedera"), amount_usd_cents: z.number().int() }),
   "payment.completed": z.object({ payment_id: uuid, capability_id: uuid, settlement_ref: z.string() }),
   "payment.failed": z.object({ payment_id: uuid, capability_id: uuid, error_code: z.string() }),

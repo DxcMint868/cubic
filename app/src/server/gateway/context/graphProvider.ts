@@ -8,7 +8,7 @@ import { baseFacts, type ContextProvider, type FactsCtx, type FactsIntentRef } f
 // plan-07 EXACT fixture map — demo-only identity, flagged demo. Real identities
 // go over GraphQL; ONLY this fixture identity short-circuits (never networked).
 const FIXTURE_TRUST: Record<string, AgentTrust> = {
-  "fixture:low-rep": { identity: "fixture:low-rep", reputation: 0.50, validation: "unknown", capabilities: [] },
+  "fixture:low-rep": { identity: "fixture:low-rep", reputation: 0.50, validation: "unknown", capabilities: [], feedbackCount: 1 },
 };
 
 // plan-07 EXACT neutral fallback: 0.80 sits exactly AT default-v1's
@@ -46,7 +46,7 @@ export class GraphContextProvider implements ContextProvider {
       return await this.agent0.lookup(identity);
     } catch {
       console.warn("graph-context-fallback", { identity });
-      return { identity, reputation: NEUTRAL_REPUTATION, validation: "unknown", capabilities: [] };
+      return { identity, reputation: NEUTRAL_REPUTATION, validation: "unknown", capabilities: [], feedbackCount: 0 };
     }
   }
 }

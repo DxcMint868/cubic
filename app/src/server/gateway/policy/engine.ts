@@ -20,11 +20,18 @@ export interface Rule {
   min?: number;
   decision: DecisionType;
   reason: ReasonCode;
+  // Council multisig: the council name that must sign an escalation from this
+  // rule (absent = single resolver). Read at escalate time, never by evaluate
+  // — the decision stays purely deterministic; council only routes the approval.
+  council?: string;
 }
 
 const RISK_SCORE: Record<RiskClass, 10 | 40 | 70 | 90> = {
   low: 10, medium: 40, high: 70, critical: 90,
 };
+
+// Exported for the per-agent grant check in ingest (same risk mapping, no fork).
+export { RISK_SCORE };
 
 export function serviceFor(intent: NormalizedIntent): string | null {
   return intent.action === "purchase_security_scan" ? "scanner" : null;

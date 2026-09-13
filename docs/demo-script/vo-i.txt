@@ -1,0 +1,21 @@
+FOOTAGE I — NETWORK + CLOSER (3:28–3:43)
+
+BEFORE ROLLING
+- Tab: /network. The SSE feed ticks live off the same audit log — after this
+  session there will be events flowing. If the feed is quiet, run one cheap
+  chat turn (READ PR #421) right before rolling.
+
+STEPS (in order, with timing)
+1. [3:28–3:38] /network, full window. HANDS OFF — let the feed move by
+   itself. No scrolling; the motion IS the shot.
+2. [3:38] Cut to the hero (reuse Footage A's last frame or re-record a 3s
+   still of the wordmark).
+3. [3:38–3:43] Hold on the wordmark. End.
+
+VO (~40 words)
+
+    Everything you saw — every allow, every denial, every signature —
+    streams into one network view. Acme's story is every company's
+    next year: agents with real power. Cubic is the gate that makes
+    that power safe to grant. Cubic — the authorization layer for
+    autonomous AI.

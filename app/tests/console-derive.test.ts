@@ -3,6 +3,7 @@ import type { AuditEvent } from "@/lib/api";
 import {
   deriveAgents,
   deriveApprovals,
+  deriveApprovers,
   derivePolicies,
   deriveTasks,
   parseTs,
@@ -110,8 +111,7 @@ describe("deriveApprovals", () => {
     expect(resolved[0].status).toBe("approved");
   });
 
-  it("does not invent a dev provider when the requested event is missing", () => {
-    const { resolved } = deriveApprovals([
+  it("does not invent a dev provider when the requested event is missing", () => {    const { resolved } = deriveApprovals([
       event({
         id: 30,
         event_type: "ledger.approval.completed",
@@ -125,5 +125,49 @@ describe("deriveApprovals", () => {
       }),
     ]);
     expect(resolved[0].provider).toBe("ledger");
+  });
+});
+
+describe("deriveApprovers", () => {
+  it("groups by wallet signer when signed, else by attribution string", () => {
+    const rows = deriveApprovers([
+      event({
+        id: 1,
+        event_type: "ledger.approval.completed",
+        payload: { approval_id: "a", decision_id: "d", provider: "dev", outcome: "approved", resolved_by: "demo-operator", signer: "0xabc", signature: "0x123" },
+        created_at: "2026-09-11 17:10:00+00",
+      }),
+      event({
+        id: 2,
+        event_type: "ledger.approval.completed",
+        payload: { approval_id: "b", decision_id: "d", provider: "dev", outcome: "rejected", resolved_by: "demo-operator", signer: "0xabc", signature: "0x456" },
+        created_at: "2026-09-11 17:20:00+00",
+      }),
+      event({
+        id: 3,
+        event_type: "ledger.approval.completed",
+        payload: { approval_id: "c", decision_id: "d", provider: "dev", outcome: "rejected", resolved_by: "demo-operator" },
+        created_at: "2026-09-11 17:30:00+00",
+      }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].id).toBe("demo-operator");
+    expect(rows[0]).toMatchObject({ resolved: 1, approved: 0, rejected: 1, signed: 0 });
+    expect(rows[1]).toMatchObject({ id: "0xabc", resolved: 2, approved: 1, rejected: 1, signed: 2 });
+    expect(rows[1].address).toBe("0xabc");
+  });
+
+  it("seeds council members with 0/0 before they ever resolve", () => {
+    const rows = deriveApprovers([], [
+      { name: "treasury-council", members: ["0xAAA", "0xBBB"] },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ id: "0xaaa", resolved: 0, approved: 0, rejected: 0, councils: ["treasury-council"] });
+  });
+
+  it("ignores non-completion events", () => {
+    expect(deriveApprovers([
+      event({ id: 1, event_type: "ledger.approval.requested", payload: {} }),
+    ])).toHaveLength(0);
   });
 });

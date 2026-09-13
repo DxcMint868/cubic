@@ -13,6 +13,7 @@ import {
   tools,
 } from "../db/schema";
 import type { RiskClass } from "../domain";
+import { anchorEvent } from "../anchors/hcs";
 import type { ProjectionMeta } from "./bus";
 import type { EventEnvelope, EventType } from "./types";
 
@@ -233,5 +234,6 @@ export async function projectEvent(
     .returning();
 
   broadcast(row);
+  anchorEvent(envelope);
   return row;
 }

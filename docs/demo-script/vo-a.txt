@@ -1,0 +1,18 @@
+FOOTAGE A — CUBIC LANDING PAGE (0:00–0:20)
+Screen: landing page (localhost:3000), slow top-to-bottom scroll: hero with
+network canvas → manifesto → partner marquee (The Graph, Hedera, Ledger,
+ERC-8004). This is OUR pitch, OUR words — no Acme here. Acme arrives in A2.
+
+SHOT LIST
+1. 0:00–0:05 — hero still, then first slow scroll begins.
+2. 0:05–0:12 — scroll through manifesto.
+3. 0:12–0:18 — partner marquee; PAUSE 3s so logos read (prize partners).
+4. 0:18–0:20 — scroll stops on the marquee; cut.
+
+VO (en, ~45 words — calm, declarative)
+
+    AI agents just got real power: they merge code, they move money,
+    they call paid services. But who decides what they're allowed to
+    do? Cubic is the authorization layer for autonomous AI — every
+    agent action, normalized, policy-checked, and decided before it
+    happens. Built on ERC-8004, The Graph, and Hedera.

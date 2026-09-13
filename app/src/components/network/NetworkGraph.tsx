@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { NetworkEvent } from "@/lib/api";
+import { SERVICES, serviceFor } from "./topology";
 
 interface AgentNode {
   pseudonym: string;
@@ -24,18 +25,12 @@ interface Pulse {
   eventType: string;
   outcome: string;
   risk: string;
+  serviceId: string;
   start: number;
   duration: number;
 }
 
-interface PaymentMark {
-  id: number;
-  start: number;
-  failed: boolean;
-}
-
-const PAYMENT_MARK_MS = 45000;
-const PULSE_MS = 1300;
+const PULSE_MS = 1200;
 const BLOCKED = new Set([
   "deny",
   "rejected",
@@ -100,10 +95,12 @@ export default function NetworkGraph({
   events,
   selected,
   onSelect,
+  emptyLabel,
 }: {
   events: NetworkEvent[];
   selected: string | null;
   onSelect: (pseudonym: string | null) => void;
+  emptyLabel?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const eventsRef = useRef(events);
@@ -112,6 +109,8 @@ export default function NetworkGraph({
   selectedRef.current = selected;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const emptyRef = useRef(emptyLabel ?? "");
+  emptyRef.current = emptyLabel ?? "";
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -126,8 +125,10 @@ export default function NetworkGraph({
     let hover: string | null = null;
     let primed = false;
     let lastSeenId = 0;
-    let pulses: Pulse[] = [];
-    let marks: PaymentMark[] = [];
+    // One live signal per agent: a fresh event for an agent restarts its dot
+    // instead of stacking, so a burst reads as one signal per rail.
+    const pulses = new Map<string, Pulse>();
+    const serviceGlow = new Map<string, number>();
     let hit: { pseudonym: string; x: number; y: number; size: number }[] = [];
 
     const resize = () => {
@@ -144,6 +145,30 @@ export default function NetworkGraph({
       else ctx.strokeRect(x - size / 2 + 0.5, y - size / 2 + 0.5, size - 1, size - 1);
     };
 
+    // Two-leg path: agent (ax,ay) → gateway (gx,gy) → service (sx,sy).
+    // Blocked outcomes never leave the gateway: t maps onto the first leg.
+    const pathPoint = (
+      ax: number,
+      ay: number,
+      gx: number,
+      gy: number,
+      sx: number,
+      sy: number,
+      t: number,
+      blocked: boolean,
+    ): { x: number; y: number } => {
+      if (blocked) {
+        const c = Math.min(t, 0.58);
+        return { x: ax + (gx - ax) * c, y: ay + (gy - ay) * c };
+      }
+      if (t <= 0.45) {
+        const k = t / 0.45;
+        return { x: ax + (gx - ax) * k, y: ay + (gy - ay) * k };
+      }
+      const k = (t - 0.45) / 0.55;
+      return { x: gx + (sx - gx) * k, y: gy + (sy - gy) * k };
+    };
+
     const frame = () => {
       const now = performance.now();
       const all = eventsRef.current;
@@ -156,72 +181,52 @@ export default function NetworkGraph({
         if (fresh.length > 0) {
           lastSeenId = fresh[fresh.length - 1].id;
           for (const event of fresh.slice(-12)) {
-            pulses.push({
+            pulses.set(event.agent_pseudonym, {
               id: event.id,
               pseudonym: event.agent_pseudonym,
               actionClass: event.action_class,
               eventType: event.event_type,
               outcome: event.outcome,
               risk: event.risk_class,
+              serviceId: serviceFor(event),
               start: now,
               duration: PULSE_MS,
             });
-            if (event.event_type.startsWith("payment.")) {
-              marks.push({
-                id: event.id,
-                start: now,
-                failed: event.event_type === "payment.failed",
-              });
-            }
           }
         }
       }
 
-      pulses = pulses.filter((pulse) => now - pulse.start < pulse.duration);
-      marks = marks.filter((mark) => now - mark.start < PAYMENT_MARK_MS);
+      for (const [key, pulse] of pulses) {
+        if (now - pulse.start >= pulse.duration) pulses.delete(key);
+      }
+      for (const [id, until] of serviceGlow) {
+        if (now > until) serviceGlow.delete(id);
+      }
 
       const nodes = buildNodes(all);
-      const categories = [...new Set(nodes.map((node) => node.category))].sort();
-      const cx = w / 2;
-      const cy = h / 2;
-      const ring = Math.min(w, h) * 0.34;
-      const anchors = new Map<string, { x: number; y: number }>();
-      categories.forEach((category, index) => {
-        const angle =
-          categories.length === 1
-            ? -Math.PI / 2
-            : -Math.PI / 2 + (index * Math.PI * 2) / categories.length;
-        const radius = categories.length === 1 ? ring * 0.62 : ring;
-        anchors.set(category, {
-          x: cx + Math.cos(angle) * radius,
-          y: cy + Math.sin(angle) * radius,
-        });
-      });
+      const gx = w * 0.5;
+      const gy = h / 2;
+      const ax = Math.max(w * 0.2, 90);
+      const sx = Math.min(w * 0.82, w - 70);
 
-      const positions = new Map<string, { x: number; y: number; size: number }>();
+      // Vertical stacks, centered.
+      const agentGap = nodes.length <= 1 ? 0 : Math.min(42, (h - 150) / Math.max(nodes.length - 1, 1));
+      const agentTop = gy - (agentGap * Math.max(nodes.length - 1, 0)) / 2;
+      const svcGap = Math.min(46, (h - 150) / Math.max(SERVICES.length - 1, 1));
+      const svcTop = gy - (svcGap * (SERVICES.length - 1)) / 2;
+
+      const agentPos = new Map<string, { x: number; y: number; size: number }>();
       hit = [];
-      const groups = new Map<string, AgentNode[]>();
-      for (const node of nodes) {
-        const group = groups.get(node.category) ?? [];
-        group.push(node);
-        groups.set(node.category, group);
-      }
-      for (const [category, group] of groups) {
-        const anchor = anchors.get(category);
-        if (!anchor) continue;
-        const cols = Math.ceil(Math.sqrt(group.length));
-        const rows = Math.ceil(group.length / cols);
-        const gap = 36;
-        group.forEach((node, index) => {
-          const row = Math.floor(index / cols);
-          const col = index % cols;
-          const x = anchor.x + (col - (cols - 1) / 2) * gap;
-          const y = anchor.y + (row - (rows - 1) / 2) * gap;
-          const size = 13 + Math.min(node.count, 24) * 0.55;
-          positions.set(node.pseudonym, { x, y, size });
-          hit.push({ pseudonym: node.pseudonym, x, y, size });
-        });
-      }
+      nodes.forEach((node, index) => {
+        const y = nodes.length === 1 ? gy : agentTop + index * agentGap;
+        const size = 13 + Math.min(node.count, 24) * 0.55;
+        agentPos.set(node.pseudonym, { x: ax, y, size });
+        hit.push({ pseudonym: node.pseudonym, x: ax, y, size });
+      });
+      const svcPos = new Map<string, { x: number; y: number }>();
+      SERVICES.forEach((svc, index) => {
+        svcPos.set(svc.id, { x: sx, y: svcTop + index * svcGap });
+      });
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = "#000";
@@ -231,132 +236,103 @@ export default function NetworkGraph({
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      for (const [category, group] of groups) {
-        const anchor = anchors.get(category);
-        if (!anchor) continue;
-        const cols = Math.ceil(Math.sqrt(group.length));
-        const rows = Math.ceil(group.length / cols);
-        const gap = 36;
-        const halfW = Math.max(cols - 1, 0) * (gap / 2) + 22;
-        const halfH = Math.max(rows - 1, 0) * (gap / 2) + 22;
-        ctx.setLineDash([2, 4]);
-        ctx.strokeStyle = "rgba(255,255,255,0.1)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(anchor.x - halfW + 0.5, anchor.y - halfH + 0.5, halfW * 2 - 1, halfH * 2 - 1);
-        ctx.setLineDash([]);
+      if (nodes.length === 0) {
         ctx.fillStyle = "rgba(255,255,255,0.34)";
-        ctx.fillText(category.toUpperCase(), anchor.x, anchor.y - halfH - 10);
+        ctx.fillText(
+          emptyRef.current || "NO AGENTS IN VIEW — TRY GLOBAL",
+          gx,
+          gy,
+        );
+        raf = requestAnimationFrame(frame);
+        return;
       }
 
-      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      // Column headers.
+      ctx.fillStyle = "rgba(255,255,255,0.34)";
+      ctx.fillText(`AGENTS · ${nodes.length}`, ax, 22);
+      ctx.fillText(`SERVICES · ${SERVICES.length}`, sx, 22);
+
+      // Static rails: agents → gateway, gateway → services.
       ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.beginPath();
       for (const node of nodes) {
-        const position = positions.get(node.pseudonym);
-        if (!position) continue;
-        ctx.moveTo(position.x, position.y);
-        ctx.lineTo(cx, cy);
+        const p = agentPos.get(node.pseudonym);
+        if (!p) continue;
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(gx, gy);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.11)";
+      ctx.beginPath();
+      for (const svc of SERVICES) {
+        const p = svcPos.get(svc.id);
+        if (!p) continue;
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
 
+      // Gateway.
       ctx.strokeStyle = "#c9c9c9";
       ctx.lineWidth = 1;
-      square(cx, cy, 30, false);
+      square(gx, gy, 30, false);
       ctx.fillStyle = "#c9c9c9";
-      square(cx, cy, 8, true);
+      square(gx, gy, 8, true);
       ctx.fillStyle = "rgba(255,255,255,0.4)";
-      ctx.fillText("GATEWAY", cx, cy + 28);
+      ctx.fillText("GATEWAY", gx, gy + 28);
 
-      for (const mark of marks) {
-        const age = (now - mark.start) / PAYMENT_MARK_MS;
-        const alpha = Math.max(0, 1 - age);
-        const offset = Math.min(marks.length, 8);
-        const index = marks.indexOf(mark);
-        const angle = -Math.PI / 2 + (index / Math.max(offset, 1)) * Math.PI * 2;
-        const mx = cx + Math.cos(angle) * 30;
-        const my = cy + Math.sin(angle) * 30;
-        ctx.save();
-        ctx.translate(mx, my);
-        ctx.rotate(Math.PI / 4);
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = mark.failed ? "#5a5a5a" : "#e8e8e8";
-        ctx.setLineDash(mark.failed ? [2, 2] : []);
-        ctx.lineWidth = 1;
-        square(0, 0, 8, false);
-        ctx.restore();
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-      }
-
-      ctx.textAlign = "center";
-      for (const pulse of pulses) {
-        const position = positions.get(pulse.pseudonym);
-        if (!position) continue;
+      // Signals: one small dot traveling the rail, nothing else. No tails,
+      // no labels — the feed below says what flowed; the canvas just moves.
+      for (const pulse of pulses.values()) {
+        const a = agentPos.get(pulse.pseudonym);
+        const s = svcPos.get(pulse.serviceId);
+        if (!a || !s) continue;
         const t = Math.min(1, (now - pulse.start) / pulse.duration);
         const blocked = BLOCKED.has(pulse.outcome);
-        const limit = blocked ? Math.min(t, 0.58) : t;
-        const headX = position.x + (cx - position.x) * limit;
-        const headY = position.y + (cy - position.y) * limit;
-        const tailT = Math.max(0, limit - 0.22);
-        const tailX = position.x + (cx - position.x) * tailT;
-        const tailY = position.y + (cy - position.y) * tailT;
-        const fade = blocked ? Math.max(0, 1 - Math.max(0, t - 0.58) / 0.42) : 1 - t;
-        const alpha = Math.max(0.08, fade);
+        const head = pathPoint(a.x, a.y, gx, gy, s.x, s.y, t, blocked);
+        const fade = blocked ? Math.max(0, 1 - Math.max(0, t - 0.58) / 0.42) : 1 - t * 0.5;
         const escalated = pulse.outcome === "escalate" || pulse.outcome === "escalated";
+        if (!blocked && t > 0.85) serviceGlow.set(pulse.serviceId, now + 900);
 
         ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = "#e8e8e8";
-
-        if (pulse.actionClass === "payment") {
-          ctx.lineWidth = 2;
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.moveTo(tailX, tailY);
-          ctx.lineTo(headX, headY);
-          ctx.stroke();
-          ctx.translate(headX, headY);
-          ctx.rotate(Math.PI / 4);
-          square(0, 0, 7, !blocked);
+        ctx.globalAlpha = Math.max(0.2, fade);
+        if (blocked) {
+          ctx.fillStyle = "#8a8a8a";
+          square(head.x, head.y, 3, true);
+        } else if (escalated) {
+          ctx.strokeStyle = "#e8e8e8";
+          ctx.lineWidth = 1;
+          square(head.x, head.y, 6, false);
         } else {
-          if (pulse.actionClass === "intent") {
-            ctx.setLineDash([1, 3]);
-            ctx.lineWidth = 1;
-          } else if (pulse.actionClass === "approval") {
-            ctx.setLineDash([5, 4]);
-            ctx.lineWidth = 1;
-          } else if (pulse.actionClass === "execution") {
-            ctx.setLineDash([]);
-            ctx.lineWidth = 3;
-          } else if (pulse.actionClass === "authorization") {
-            ctx.setLineDash([]);
-            ctx.lineWidth = 2;
-          } else if (pulse.actionClass === "discovery") {
-            ctx.setLineDash([1, 2]);
-            ctx.lineWidth = 1;
-          } else if (pulse.actionClass === "evaluation") {
-            ctx.setLineDash([]);
-            ctx.lineWidth = 1.5;
-          } else if (pulse.actionClass === "task") {
-            ctx.setLineDash([1, 5]);
-            ctx.lineWidth = 1;
-          } else {
-            ctx.setLineDash([]);
-            ctx.lineWidth = blocked ? 1 : 1.5;
-          }
-          ctx.beginPath();
-          ctx.moveTo(tailX, tailY);
-          ctx.lineTo(headX, headY);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.translate(headX, headY);
-          square(0, 0, escalated ? 9 : 6, !blocked && !escalated);
+          ctx.fillStyle = "#e8e8e8";
+          square(head.x, head.y, 4, true);
         }
         ctx.restore();
       }
 
+      // Service nodes (right column).
+      for (const svc of SERVICES) {
+        const p = svcPos.get(svc.id);
+        if (!p) continue;
+        const active = serviceGlow.has(svc.id);
+        ctx.save();
+        ctx.strokeStyle = active ? "#ffffff" : "#6f6f6f";
+        ctx.lineWidth = active ? 2 : 1;
+        square(p.x, p.y, 20, false);
+        if (active) {
+          ctx.fillStyle = "rgba(255,255,255,0.8)";
+          square(p.x, p.y, 4, true);
+        }
+        ctx.fillStyle = active ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.4)";
+        ctx.fillText(svc.label, p.x, p.y + 20);
+        ctx.restore();
+      }
+
+      // Agent nodes (left column).
+      ctx.textAlign = "center";
       for (const node of nodes) {
-        const position = positions.get(node.pseudonym);
+        const position = agentPos.get(node.pseudonym);
         if (!position) continue;
         const isSelected = node.pseudonym === selectedRef.current;
         const isHover = node.pseudonym === hover;
@@ -387,10 +363,9 @@ export default function NetworkGraph({
           ctx.fillStyle = isSelected ? "#ffffff" : "#8a8a8a";
           ctx.fillRect(position.x - 1, position.y - 1, 2, 2);
         }
-        if (isSelected || isHover) {
-          ctx.fillStyle = "rgba(255,255,255,0.7)";
-          ctx.fillText(node.pseudonym.slice(0, 8), position.x, position.y + position.size / 2 + 12);
-        }
+        ctx.fillStyle =
+          isSelected || isHover ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)";
+        ctx.fillText(node.pseudonym.slice(0, 8), position.x, position.y + position.size / 2 + 12);
         ctx.restore();
       }
 
