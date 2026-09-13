@@ -6,23 +6,12 @@ the external site while cameras run.
 BEFORE ROLLING
 - Tab 1: /demo/chat (same session).
 - Tab 2: /console/agents.
-- Tab 3 (preloaded): lab-1's profile page (/console/agents → lab-1), and
-  ONE more tab: click "SUBGRAPH DATA — EXPLORE IN THE GRAPH" on that profile.
-  The Graph playground opens with the agent query PRE-FILLED. Press run
-  (▶ button or ⌘Enter) once BEFORE rolling so results are on screen.
-  Fallback if the pre-fill didn't survive: paste this into the editor:
-
-    query {
-      agent(id: "8453:74108") {
-        id
-        feedback(where: {isRevoked: false}) { value }
-      }
-    }
-
-  (Returns lab-1's live negative feedback — the values our gateway read.)
-- Optional beauty shot (preloaded, only if the take is smooth):
-  https://erc-8004.quicknode.com/agents/base-sepolia/9223 — our deploy-agent
-  page. Skip if time-pressed.
+- Tab 3 (preloaded): lab-1's profile page (/console/agents → lab-1). Click
+  "SUBGRAPH DATA — LIVE QUERY" once before rolling: our verify page opens
+  with the exact GraphQL query and The Graph's raw response (feedback rows,
+  fetched live). Hold it ready — this page IS the beat. The explorer link on
+  the page is for the skeptic; the explorer ignores deep-linked queries
+  (verified), so don't plan to type on it on camera.
 
 STEPS (in order, with timing)
 1. [2:43] Tab 1: click "+ N MORE SCENARIOS" to expand, then click
@@ -34,19 +23,19 @@ STEPS (in order, with timing)
    low-rep-research-agent row.
 4. [2:55–3:00] Profile: reputation bar ≈ 0.10, "live — Agent0 subgraph,
    8453:74108" label, SUBGRAPH DATA — VERIFY ON THE GRAPH link. HOLD 3s.
-5. [2:58–3:02] On the profile, click "SUBGRAPH DATA — EXPLORE IN THE GRAPH".
-   The playground opens in a new tab with the query pre-filled. Press run
-   (▶ / ⌘Enter) — results render on camera in 1–2s. If the editor came up
-   empty, paste the query from this file and run.
-6. [3:02–3:08] HANDS OFF. Hold on the raw feedback rows — negative values,
-   The Graph's own UI chrome visible. A paused frame must show identity
-   8453:74108 and the feedback values. Cut.
+5. [2:58] On the profile, click "SUBGRAPH DATA — LIVE QUERY →". The verify
+   page opens in a new tab: QUERY (AS SENT) block + RESPONSE (RAW, FROM THE
+   GRAPH) block, fetched-at timestamp on top.
+6. [3:00–3:08] Scroll once so the RESPONSE block's feedback rows are center
+   frame. HANDS OFF. A paused frame must show: identity 8453:74108 in the
+   response JSON, the negative feedback values, and the
+   gateway.thegraph.com source line at the top. Cut.
 
 VO (~60 words)
 
     Reputation is not our database either. Lab-1 is a contractor agent
     with real negative feedback on Base Agent0 — and The Graph indexes
     it. Watch: its read escalates, because its onchain reputation is
-    below the floor. And here is that same record on The Graph's
-    playground — same identity, same score. We didn't paint that.
+    below the floor. And here is that record — the exact query and The
+    Graph's verbatim response, live, right now. We didn't paint that.
     The subgraph did.

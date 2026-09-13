@@ -541,7 +541,6 @@ export interface AgentProfile {
     feedbackCount: number;
   };
   subgraph_docs_url: string;
-  subgraph_playground_url: string;
   granted_tools: AgentProfileTool[];
   ungranted_tools: AgentProfileTool[];
   soul: string | null;

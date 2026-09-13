@@ -252,9 +252,16 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
                     </div>
                   )}
                   <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-                    <a href={profile.subgraph_playground_url} target="_blank" rel="noreferrer" className="link">
-                      SUBGRAPH DATA — EXPLORE IN THE GRAPH →
-                    </a>
+                    {profile.reputation.identity && (
+                      <a
+                        href={`/api/graph/verify?identity=${encodeURIComponent(profile.reputation.identity)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="link"
+                      >
+                        SUBGRAPH DATA — LIVE QUERY →
+                      </a>
+                    )}
                     <a href={profile.subgraph_docs_url} target="_blank" rel="noreferrer" className="link" style={{ color: "#5a5a5a" }}>
                       DOCS
                     </a>
