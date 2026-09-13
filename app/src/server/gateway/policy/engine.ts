@@ -26,6 +26,9 @@ const RISK_SCORE: Record<RiskClass, 10 | 40 | 70 | 90> = {
   low: 10, medium: 40, high: 70, critical: 90,
 };
 
+// Exported for the per-agent grant check in ingest (same risk mapping, no fork).
+export { RISK_SCORE };
+
 export function serviceFor(intent: NormalizedIntent): string | null {
   return intent.action === "purchase_security_scan" ? "scanner" : null;
 }

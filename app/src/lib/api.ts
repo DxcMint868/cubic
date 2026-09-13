@@ -447,3 +447,42 @@ export function postChatTurn(input: {
     body: JSON.stringify(input),
   });
 }
+
+// Agent registry + profile (names, grants, reputation, SOUL/MEMORY).
+
+export interface AgentRegistryEntry {
+  id: string;
+  agent_key: string;
+  name: string;
+  environment: string;
+  status: string;
+}
+
+export interface AgentProfileTool {
+  name: string;
+  category: string;
+  risk_class: string;
+  origin: "mcp" | "direct";
+}
+
+export interface AgentProfile {
+  id: string;
+  agent_key: string;
+  name: string;
+  environment: string;
+  status: string;
+  erc8004_identity: string | null;
+  reputation: { score: number; source: "agent0-subgraph" | "offline-fallback" | "static"; identity: string | null };
+  granted_tools: AgentProfileTool[];
+  ungranted_tools: AgentProfileTool[];
+  soul: string | null;
+  memory: string | null;
+}
+
+export function getAgents(): Promise<AgentRegistryEntry[]> {
+  return request<AgentRegistryEntry[]>("/api/console/agents");
+}
+
+export function getAgentProfile(id: string): Promise<AgentProfile> {
+  return request<AgentProfile>(`/api/console/agents/${id}`);
+}

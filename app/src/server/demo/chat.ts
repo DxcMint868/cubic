@@ -178,14 +178,26 @@ async function ensureTreasuryFixtures(tenantId: string): Promise<void> {
     .where(and(eq(policies.tenantId, tenantId), eq(policies.name, "default-v1")))
     .orderBy(desc(policies.version))
     .limit(1);
-  if (!policy) throw new Error("demo chat: default-v1 missing");
-  const rules = [...(policy.rules as Rule[])];
+  if (!policy) throw new Error("demo chat: default-v1 missing");  const rules = [...(policy.rules as Rule[])];
   const at = rules.findIndex((r) => r.id === "tool-allowlist");
   if (at < 0) throw new Error("demo chat: tool-allowlist rule missing in default-v1");
   const names = TREASURY_TOOLS.map((t) => t.name);
   if (!names.every((n) => rules[at].tools?.includes(n))) {
     rules[at] = { ...rules[at], tools: [...(rules[at].tools ?? []), ...names.filter((n) => !rules[at].tools?.includes(n))] };
     await db().update(policies).set({ rules }).where(eq(policies.id, policy.id));
+  }
+  // Per-agent grants are enforced (see orchestrator agent-grant check), so the
+  // demo agent needs the treasury tools granted too — mirrors treasury.ts.
+  const [demoAgent] = await db()
+    .select()
+    .from(agents)
+    .where(and(eq(agents.tenantId, tenantId), eq(agents.agentKey, AGENT_KEY)));
+  if (demoAgent) {
+    const have = (demoAgent.declaredCapabilities ?? []) as string[];
+    const missing = names.filter((n) => !have.includes(n));
+    if (missing.length) {
+      await db().update(agents).set({ declaredCapabilities: [...have, ...missing] }).where(eq(agents.id, demoAgent.id));
+    }
   }
 }
 

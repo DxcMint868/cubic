@@ -42,6 +42,8 @@ const TREASURY_TOOLS = [
 let tenantId = "";
 let loopback = "";
 let closeLoopback: () => void = () => undefined;
+let savedChatModel: string | undefined;
+let savedHcsTopic: string | undefined;
 
 function startLoopback(): Promise<{ url: string; close: () => void }> {
   const server = http.createServer(async (req, res) => {
@@ -125,8 +127,13 @@ async function chat(body: Record<string, unknown>): Promise<{ status: number; js
 }
 
 beforeAll(async () => {
-  // Parser tests must see true absence even if the dev env carries a key.
+  // Parser tests must see true absence even if the dev env carries a key or
+  // a model override — remove both for the duration (restored in afterAll).
   delete process.env.OPENROUTER_API_KEY;
+  savedChatModel = process.env.CHAT_MODEL;
+  delete process.env.CHAT_MODEL;
+  savedHcsTopic = process.env.HCS_TOPIC_ID;
+  delete process.env.HCS_TOPIC_ID;
   await seed();
   const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, TENANT));
   tenantId = tenant.id;
@@ -211,6 +218,8 @@ afterAll(async () => {
     await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudo));
   }
   delete process.env.DEMO_TENANT_SLUG;
+  if (savedChatModel !== undefined) process.env.CHAT_MODEL = savedChatModel;
+  if (savedHcsTopic !== undefined) process.env.HCS_TOPIC_ID = savedHcsTopic;
   delete (globalThis as Record<string, unknown>).__cubicConfig;
 }, 120000);
 

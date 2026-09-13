@@ -11,7 +11,7 @@ import {
   Tag,
 } from "@/components/ConsoleBits";
 import { fmtAge, fmtDateTime, shortId } from "@/components/console/derive";
-import { getAuditEvents, getTrace, useApi, type Trace } from "@/lib/api";
+import { getAgentProfile, getAuditEvents, getTrace, useApi, type AgentProfile, type Trace } from "@/lib/api";
 
 interface AgentData {
   traces: Trace[];
@@ -56,6 +56,8 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
       firstEventAt: mine[mine.length - 1]?.created_at ?? null,
     };
   });
+
+  const { data: profile } = useApi(`agent-profile:${agentId}`, () => getAgentProfile(agentId));
 
   const agentKey = useMemo(() => {
     if (!data) return null;
@@ -136,10 +138,11 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
               color: "#f4f4f4",
             }}
           >
-            {agentKey ?? shortId(agentId, 12)}
+            {profile?.name ?? agentKey ?? shortId(agentId, 12)}
           </h1>
           <p className="mono" style={{ marginTop: 12, fontSize: 11, color: "#8a8a8a" }}>
-            AGENT ID {agentId}
+            {profile?.agent_key ?? agentKey ?? `AGENT ID ${agentId}`}
+            {profile ? ` · ${profile.environment.toUpperCase()} · ${profile.status.toUpperCase()}` : ""}
           </p>
         </div>
         <Link
@@ -193,6 +196,69 @@ export default function AgentDetail({ agentId }: { agentId: string }) {
           </div>
         </Panel>
       </div>
+
+      {profile && (
+        <div style={{ marginTop: 20, display: "grid", gap: 20 }}>
+          <Panel title="AGENT — IDENTITY & REPUTATION">
+            <div className="mono" style={{ display: "grid", gap: 8, fontSize: 11, color: "#c9c9c9" }}>
+              <div>
+                ERC-8004 <span style={{ color: "#5a5a5a" }}>·</span>{" "}
+                {profile.erc8004_identity ?? "none — static reputation applies"}
+              </div>
+              <div>
+                REPUTATION <span style={{ color: "#5a5a5a" }}>·</span> {profile.reputation.score.toFixed(2)}{" "}
+                <span style={{ color: "#5a5a5a" }}>
+                  ({profile.reputation.source === "agent0-subgraph"
+                    ? `live — Agent0 subgraph, ${profile.reputation.identity}`
+                    : profile.reputation.source === "offline-fallback"
+                      ? "subgraph unreachable — neutral fallback"
+                      : "no on-chain identity — static default"})
+                </span>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel title="AGENT — SOUL.md">
+            {profile.soul ? (
+              <pre className="mono" style={{ fontSize: 11.5, lineHeight: 1.7, color: "#c9c9c9", whiteSpace: "pre-wrap", margin: 0 }}>
+                {profile.soul}
+              </pre>
+            ) : (
+              <EmptyState>This agent has no SOUL.md yet.</EmptyState>
+            )}
+          </Panel>
+
+          <Panel title="AGENT — MEMORY.md">
+            {profile.memory ? (
+              <pre className="mono" style={{ fontSize: 11.5, lineHeight: 1.7, color: "#c9c9c9", whiteSpace: "pre-wrap", margin: 0 }}>
+                {profile.memory}
+              </pre>
+            ) : (
+              <EmptyState>This agent has no MEMORY.md yet.</EmptyState>
+            )}
+          </Panel>
+
+          <Panel title={`AGENT — ALLOWED TOOLS (${profile.granted_tools.length})`}>
+            <div className="mono" style={{ display: "grid", gap: 8, fontSize: 11 }}>
+              {profile.granted_tools.map((tool) => (
+                <div key={tool.name} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ color: "#e8e8e8" }}>{tool.name}</span>
+                  <Tag>{tool.origin === "mcp" ? "MCP" : tool.category.toUpperCase()}</Tag>
+                  <span style={{ color: "#5a5a5a" }}>{tool.risk_class.toUpperCase()} RISK</span>
+                </div>
+              ))}
+              {profile.granted_tools.length === 0 && (
+                <span style={{ color: "#3f3f3f" }}>NO GRANTS — EVERY TOOL CALL DENIES</span>
+              )}
+              {profile.ungranted_tools.length > 0 && (
+                <div style={{ marginTop: 8, color: "#5a5a5a" }}>
+                  NOT GRANTED: {profile.ungranted_tools.map((t) => t.name).join(" · ")}
+                </div>
+              )}
+            </div>
+          </Panel>
+        </div>
+      )}
 
       <div style={{ marginTop: 20 }}>
         <Panel title="AGENT — TASKS">

@@ -12,13 +12,19 @@ import {
   th,
 } from "@/components/ConsoleBits";
 import { deriveAgents, fmtAge, shortId } from "@/components/console/derive";
-import { getAuditEvents, useApi } from "@/lib/api";
+import { getAgents, getAuditEvents, useApi, type AgentRegistryEntry } from "@/lib/api";
 
 export default function ConsoleAgents() {
   const { data, error, loading, reload } = useApi("console-agents", () =>
     getAuditEvents({ limit: 200 }),
   );
+  const { data: registry } = useApi("console-agents-registry", () => getAgents());
   const agents = useMemo(() => deriveAgents(data ?? []), [data]);
+  const byId = useMemo(() => {
+    const map = new Map<string, AgentRegistryEntry>();
+    for (const entry of registry ?? []) map.set(entry.id, entry);
+    return map;
+  }, [registry]);
 
   if (loading && !data) {
     return (
@@ -67,7 +73,7 @@ export default function ConsoleAgents() {
               <table className="mono" style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <th style={th}>AGENT ID</th>
+                    <th style={th}>AGENT</th>
                     <th style={th}>TASKS</th>
                     <th style={th}>INTENTS</th>
                     <th style={th}>ALLOW / ESC / DENY</th>
@@ -79,7 +85,14 @@ export default function ConsoleAgents() {
                 <tbody>
                   {agents.map((agent) => (
                     <tr key={agent.agentId}>
-                      <td style={{ ...td, fontSize: 11 }}>{shortId(agent.agentId, 12)}</td>
+                      <td style={{ ...td, fontSize: 11 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#f4f4f4" }}>
+                          {byId.get(agent.agentId)?.name ?? shortId(agent.agentId, 12)}
+                        </div>
+                        <div className="mono" style={{ marginTop: 4, fontSize: 10, color: "#5a5a5a" }}>
+                          {byId.get(agent.agentId)?.agent_key ?? `id ${shortId(agent.agentId, 12)}`}
+                        </div>
+                      </td>
                       <td style={td}>{agent.taskIds.length}</td>
                       <td style={td}>{agent.intents}</td>
                       <td style={td}>
