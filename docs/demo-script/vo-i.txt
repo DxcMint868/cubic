@@ -1,0 +1,16 @@
+FOOTAGE I — NETWORK + CLOSER (3:25–3:40)
+Screen: /network (live decision feed over SSE from the same audit log), then
+a slow push to the hero (reuse Footage A's last frame if easier).
+
+SHOT LIST
+1. 3:25–3:34 — /network: the feed ticks with today's decisions. Do not
+   scroll; let it move.
+2. 3:34–3:40 — cut to hero, hold on the wordmark.
+
+VO (~40 words)
+
+    Everything you saw — every allow, every denial, every signature —
+    streams into one network view. Acme's story is every company's
+    next year: agents with real power. Cubic is the gate that makes
+    that power safe to grant. Cubic — the authorization layer for
+    autonomous AI.

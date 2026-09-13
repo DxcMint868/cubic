@@ -1,0 +1,20 @@
+FOOTAGE A — LANDING PAGE (0:00–0:25)
+Screen: landing page (localhost:3000), slow top-to-bottom scroll: hero with
+network canvas → manifesto → team → partner marquee (The Graph, Hedera,
+Ledger, ERC-8004) → market section. End resting on the hero again is fine —
+the edit cuts to Footage B from anywhere after the marquee.
+
+SHOT LIST
+1. 0:00–0:05 — hero still, then first slow scroll begins.
+2. 0:05–0:12 — scroll through manifesto.
+3. 0:12–0:18 — partner marquee; PAUSE 3s so logos read.
+4. 0:18–0:25 — market section numbers; scroll stops, hold.
+
+VO (en, ~55 words — read at a calm operator pace, not a trailer voice)
+
+    This is Acme. A hundred-and-twenty-person fintech — invoicing,
+    payouts, and a slice of treasury sitting onchain. Like half of
+    fintech, they handed real work to AI agents: agents that merge
+    code, and agents that move money. The board said yes on one
+    condition — every action passes an authorization gate that keeps
+    a record. That gate is Cubic.

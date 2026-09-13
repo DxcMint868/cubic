@@ -1,0 +1,17 @@
+FOOTAGE B — CONSOLE: AGENTS (0:25–0:45)
+Screen: /console/agents. Four rows: deploy-agent, treasury-agent,
+reader-agent, low-rep-research-agent. Click ONE row → profile page: SOUL.md
+panel, ALLOWED TOOLS, ERC-8004 identity line (84532:9223), reputation bar.
+
+SHOT LIST
+1. 0:25–0:32 — agents list, hold. Cursor to deploy-agent.
+2. 0:32–0:40 — profile: scroll SOUL.md briefly, rest on ALLOWED TOOLS.
+3. 0:40–0:45 — identity + reputation line; hold 3s (84532:9223 readable).
+
+VO (~50 words)
+
+    Acme's workforce is four agents with narrow jobs. This one ships
+    code: it may read pull requests, run scans, merge, deploy — and
+    nothing else. Every agent carries a real onchain identity,
+    registered on the ERC-8004 standard, with its reputation and its
+    charter — its SOUL file — visible right here.

@@ -1,0 +1,26 @@
+FOOTAGE D — X402: 402 → PURCHASE → PAYMENTS → HASHSCAN (1:10–1:45)
+THE HEDERA BEAT. Screen: /demo/chat (same session), then /console/payments,
+then hashscan.io. Sequence: free text "run the security scan on PR #421" →
+402 discovery (payment required line) → the purchase completes → payment
+completed one-liner + receipt → cut to Payments console → click the
+settlement ref → HashScan transaction page (real HBAR transfer, 25¢).
+
+SHOT LIST
+1. 1:10–1:18 — send the scan message; THINKING; the payment-required line
+   appears ("payment required $0.25 · hedera").
+2. 1:18–1:26 — the settled turn: payment completed one-liner with short ref;
+   hold 3s.
+3. 1:26–1:34 — cut to /console/payments: settled total ticks, the new row on
+   top. Cursor to the settlement ref (now a link).
+4. 1:34–1:45 — click → HashScan transaction page. STILL. Let the judge read:
+   transfers, timestamp, account ids. No scrolling needed; zoom if legal.
+
+VO (~75 words)
+
+    Now the part most stacks fake: machines paying machines. The scan
+    service is metered — twenty-five cents, quoted over the open x402
+    standard. The gateway answers the 402, checks the task's budget
+    policy, and settles in HBAR on the Hedera testnet through the
+    Blocky402 facilitator. And here is the receipt — not our log, not
+    our database: the actual transfer, live on Hedera's own explorer.
+    Deterministic, metered, auditable spend.
