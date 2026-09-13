@@ -4,6 +4,7 @@ import { db } from "@/server/db/client";
 import {
   approvals, auditEvents, capabilities, decisions, executions, intents, payments, tasks,
 } from "@/server/db/schema";
+import { anchorTopicId, fingerprint } from "@/server/anchors/hcs";
 
 export const dynamic = "force-dynamic";
 
@@ -166,10 +167,20 @@ export async function GET(
           status: task.status,
         },
         chain,
+        // plan-16: derived per-event HCS anchor (computed, never stored).
+        // Byte-identical to the submit path by construction (single shared
+        // fingerprint helper); topic_id is null when anchoring is disabled.
         events: eventRows.map((row) => ({
           event_type: row.eventType,
           occurred_at: row.createdAt,
           payload: row.payload,
+          anchor: {
+            fingerprint: fingerprint({
+              event_type: row.eventType,
+              payload: (row.payload ?? {}) as Record<string, unknown>,
+            }),
+            topic_id: anchorTopicId(),
+          },
         })),
       },
     });

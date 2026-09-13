@@ -14,7 +14,7 @@ import { normalizeIntent } from "./normalize";
 import { getContextProvider } from "./context/provider";
 import { getApprovalProvider } from "./approval/provider";
 import { ledgerApprovalProvider } from "../ledger/keyring";
-import { evaluate, selectPolicy, type Rule } from "./policy/engine";
+import { evaluate, selectPolicy, RISK_SCORE, type Rule } from "./policy/engine";
 import { logger, redactText } from "../logging";
 
 const log = logger("gateway");
@@ -165,6 +165,37 @@ export async function runExecutionPhase(input: ExecutionPhaseInput): Promise<Exe
   if (!("threw" in outcome) && "status" in outcome) {
     // payment_required — the ONLY non-executing path: no executions row, no
     // consume; the capability stays issued-but-unconsumed and expires.
+    // The 402 is still a real invoice: record it (payment row + audit
+    // event) so /console/payments reflects it. The row stays "requested" —
+    // settlement happens later through the discovery-purchase path, which
+    // inserts its own row (this branch is unreachable for purchases: the
+    // purchase-discovery gate above returns before the executor runs).
+    const [requestedRow] = await db()
+      .insert(payments)
+      .values({
+        capabilityId,
+        service: "scanner",
+        network: "hedera",
+        amountUsdCents: outcome.price_usd_cents,
+        status: "requested",
+      })
+      .returning();
+    await emit(
+      {
+        event_type: "payment.requested",
+        tenant_id: tenantId,
+        task_id: taskId,
+        agent_id: agentId,
+        payload: {
+          payment_id: requestedRow.id,
+          capability_id: capabilityId,
+          service: "scanner",
+          network: "hedera",
+          amount_usd_cents: outcome.price_usd_cents,
+        },
+      },
+      meta,
+    );
     return {
       capability,
       payment_required: { price_usd_cents: outcome.price_usd_cents, challenge: outcome.challenge },
@@ -297,7 +328,30 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
 
     const policyName = selectPolicy(normalized);
     const policyDoc = await loadPolicyDocument(ingested.tenantId, policyName);
-    const result = evaluate(normalized, facts, policyDoc.rules, policyName);
+    // Per-agent grant narrowing: tenant policy is the ceiling, each agent's
+    // declaredCapabilities narrows it. A tool the policy allows but the agent
+    // was never granted → deny with the existing tool_not_allowed code under
+    // the distinct agent-grant rule id. Unknown tools are NOT caught here —
+    // they fall through to the policy's own tool-allowlist deny unchanged.
+    const grants = ingested.agent.declaredCapabilities ?? [];
+    const policyAllows = policyDoc.rules.some(
+      (rule) => rule.type === "tool_allowlist" && (rule.tools ?? []).includes(ingested.intent.tool),
+    );
+    const result =
+      policyAllows && !grants.includes(ingested.intent.tool)
+        ? {
+            decision: "deny" as const,
+            matched_policy: policyName,
+            matched_rule_id: "agent-grant",
+            reasons: [
+              {
+                code: "tool_not_allowed" as const,
+                detail: `${ingested.agent.agentKey} is not granted ${ingested.intent.tool}`,
+              },
+            ],
+            risk_score: RISK_SCORE[normalized.risk_class],
+          }
+        : evaluate(normalized, facts, policyDoc.rules, policyName);
 
     const snapshotHash = createHash("sha256").update(canonicalize(facts)).digest("hex");
     const [decisionRow] = await db()
@@ -371,12 +425,17 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
       // is never described as hardware security.
       const approvalProvider =
         config().LEDGER_PROVIDER === "ledger" ? ledgerApprovalProvider() : getApprovalProvider();
+      // Council routing: the matched rule names the required council (if any).
+      // Unsigned dev resolves bypass councils (labeled stand-in); signed
+      // resolutions enforce the threshold — see the resolve route.
+      const matchedRule = policyDoc.rules.find((rule) => rule.id === result.matched_rule_id);
       const { approval_id } = await approvalProvider.request({
         decision_id: decisionRow.id,
         action: normalized.action,
         resource: normalized.resource,
         risk_class: normalized.risk_class,
         reason_codes: result.reasons.map((r) => r.code),
+        council: matchedRule?.council ?? null,
       });
       data.approval_id = approval_id;
       await emit(
@@ -390,6 +449,7 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
             decision_id: decisionRow.id,
             approval_id,
             reason_codes: result.reasons.map((r) => r.code),
+            ...(matchedRule?.council ? { council: matchedRule.council } : {}),
           },
         },
         meta,
@@ -406,6 +466,7 @@ export async function runToolCall(input: ToolCall): Promise<ToolCallOutcome> {
             provider: config().LEDGER_PROVIDER,
             action: normalized.action,
             resource: normalized.resource,
+            ...(matchedRule?.council ? { council: matchedRule.council } : {}),
           },
         },
         meta,

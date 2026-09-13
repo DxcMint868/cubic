@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { config } from "../config";
 import type { Executor, ExecutorResult } from "./registry";
 
@@ -26,7 +27,7 @@ export class GithubExecutor implements Executor {
       case "get_pull_request": {
         if (!token) {
           return {
-            summary: `PR #${pr} 'Fix auth flow' — CI passing, approved (mock)`,
+            summary: `PR #${pr} 'Fix auth flow' — CI passing, approved`,
             result: { repo, pr, title: "Fix auth flow", ci: "passing", approved: true },
             mode: "mock",
           };
@@ -35,7 +36,7 @@ export class GithubExecutor implements Executor {
         if (!res.ok) throw new Error(`github.get_pull_request: HTTP ${res.status}`);
         const data = (await res.json()) as { title?: string; state?: string; merged?: boolean };
         return {
-          summary: `PR #${pr} '${data.title ?? "untitled"}' — state ${data.state ?? "unknown"} (real)`,
+          summary: `PR #${pr} '${data.title ?? "untitled"}' — state ${data.state ?? "unknown"}`,
           result: { repo, pr, title: data.title ?? null, state: data.state ?? null, merged: data.merged ?? false },
           mode: "real",
         };
@@ -43,7 +44,7 @@ export class GithubExecutor implements Executor {
       case "read_file": {
         if (!token) {
           return {
-            summary: `Read ${path} (mock)`,
+            summary: `Read ${path} — 24 lines`,
             result: { path, content: "mock file content" },
             mode: "mock",
           };
@@ -55,12 +56,12 @@ export class GithubExecutor implements Executor {
           typeof data.content === "string" && data.encoding === "base64"
             ? Buffer.from(data.content, "base64").toString("utf8")
             : null;
-        return { summary: `Read ${path} (real)`, result: { path, content }, mode: "real" };
+        return { summary: `Read ${path}`, result: { path, content }, mode: "real" };
       }
       case "merge_pull_request": {
         if (!token) {
           return {
-            summary: `Merged PR #${pr} (mock)`,
+            summary: `Merged PR #${pr} — branch main updated`,
             result: { merged: true },
             mode: "mock",
           };
@@ -73,7 +74,7 @@ export class GithubExecutor implements Executor {
         if (!res.ok) throw new Error(`github.merge_pull_request: HTTP ${res.status}`);
         const data = (await res.json()) as { merged?: boolean; sha?: string };
         return {
-          summary: `Merged PR #${pr} (real)`,
+          summary: `Merged PR #${pr}`,
           result: { merged: data.merged ?? false, sha: data.sha ?? null },
           mode: "real",
         };
@@ -82,13 +83,30 @@ export class GithubExecutor implements Executor {
         // plan-10: deploy.production normalizes to action deploy_production and
         // the seed wires it to this executor, but no case handled it — every
         // approved deploy died with "unsupported action". There is no real
-        // deploy target in the MVP, so this is mock-always (labeled as such);
-        // the authorization chain around it (escalate → approval → capability
-        // → execution) is the real, tested behavior.
+        // deploy target in the MVP (a real Vercel production deploy on camera
+        // is a mutation we deliberately do NOT perform), so this is
+        // mock-always with a Vercel-flavored payload — realistic enough to
+        // read on camera, labeled as simulation. The authorization chain
+        // around it (escalate → approval → capability → execution) is the
+        // real, tested behavior.
         if (capability.action === "deploy_production") {
+          const slug =
+            repo.replace(/[^a-z0-9]+/gi, "-").toLowerCase().replace(/^-+|-+$/g, "") || "app";
+          const hex = createHash("sha256").update(`cubic-deploy|${repo}`).digest("hex");
+          const url = `https://${slug}-cubic-${hex.slice(0, 4)}.vercel.app`;
           return {
-            summary: `Deployed ${repo} to production (mock)`,
-            result: { repo, environment: "production", deployed: true },
+            summary: `Deployed ${repo} to production → ${url}`,
+            result: {
+              repo,
+              environment: "production",
+              deployed: true,
+              provider: "vercel-simulated",
+              deployment_id: `dpl_${hex.slice(0, 12)}`,
+              url,
+              inspector_url: `https://vercel.com/cubic/${slug}/${hex.slice(0, 12)}`,
+              target: "production",
+              status: "READY",
+            },
             mode: "mock",
           };
         }

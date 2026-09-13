@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
-  agents, auditEvents, capabilities, decisions, executions, intents,
+  agents, auditEvents, capabilities, councils, decisions, executions, intents,
   payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
@@ -215,6 +215,7 @@ afterAll(async () => {
   await db().delete(agents).where(eq(agents.tenantId, tenantId));
   await db().delete(tools).where(eq(tools.tenantId, tenantId));
   await db().delete(policies).where(eq(policies.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
   delete process.env.DEMO_TENANT_SLUG;
   delete process.env.X402_SCANNER_PRICE_CENTS;

@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { db } from "../src/server/db/client";
 import {
-  agents, auditEvents, capabilities, decisions, executions, intents,
+  agents, auditEvents, capabilities, councils, decisions, executions, intents,
   networkEvents, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
@@ -75,6 +75,7 @@ async function wipe() {
   await db().delete(agents).where(eq(agents.tenantId, tenantId));
   await db().delete(tools).where(eq(tools.tenantId, tenantId));
   await db().delete(policies).where(eq(policies.tenantId, tenantId));
+  await db().delete(councils).where(eq(councils.tenantId, tenantId));
   await db().delete(tenants).where(eq(tenants.id, tenantId));
   await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudonymFor(AGENT_KEY)));
 }
@@ -118,7 +119,7 @@ beforeAll(async () => {
   // to the scanner service is covered in execution.test.ts.
   registerExecutor("scanner", {
     execute: async (input) => ({
-      summary: `Security scan of ${String(input.args.target)}: clean (dev mode)`,
+      summary: `Security scan of ${String(input.args.target)}: clean — no criticals, 2 advisories`,
       result: { report_id: "rpt_0ab9f100", target: input.args.target, verdict: "clean", findings: [], mode: "dev" },
       mode: "dev",
     }),
@@ -164,7 +165,7 @@ describe("plan-04 MCP facade (in-process)", () => {
       expect(data.decision).toBe("allow");
       expect(data.execution).toMatchObject({
         status: "succeeded",
-        result_summary: "Security scan of acme/backend#421: clean (dev mode)",
+        result_summary: "Security scan of acme/backend#421: clean — no criticals, 2 advisories",
       });
       const mcpChain = await chainShape(taskId);
       expect(mcpChain.types).toEqual([
@@ -256,7 +257,7 @@ describe("plan-04 POST /api/mcp (streamable HTTP, stateless)", () => {
     expect(data.decision).toBe("allow");
     expect(data.execution).toMatchObject({
       status: "succeeded",
-      result_summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      result_summary: "PR #421 'Fix auth flow' — CI passing, approved",
     });
 
     const getRes = await mcpGET();

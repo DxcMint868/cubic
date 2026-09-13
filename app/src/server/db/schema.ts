@@ -118,9 +118,28 @@ export const approvals = pgTable("approvals", {
   providerRef: text("provider_ref"),
   requestedAt: ts("requested_at").notNull().defaultNow(),
   completedAt: ts("completed_at"),
+  // Council multisig (off-chain, Gnosis-Safe-compatible semantics, no
+  // contract): the council name required by the matched rule (null = single
+  // resolver) + collected member signatures [{signer, signature}].
+  council: text("council"),
+  signatures: jsonb("signatures").$type<Array<{ signer: string; signature: string }>>().notNull().default([]),
 }, (t) => [
   check("approvals_type_check", sql`${t.type} in ('ledger','human')`),
   check("approvals_status_check", sql`${t.status} in ('pending','approved','rejected')`),
+]);
+
+// Approval councils: named M-of-N member sets. Members are wallet addresses;
+// the demo seeds treasury-council (2-of-2) + deploy-council (1-of-1).
+// Safe integration is a display hook only (safe_address, unlinked).
+export const councils = pgTable("councils", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  members: jsonb("members").$type<string[]>().notNull().default([]),
+  threshold: integer("threshold").notNull().default(1),
+  safeAddress: text("safe_address"),
+}, (t) => [
+  uniqueIndex("councils_tenant_name").on(t.tenantId, t.name),
 ]);
 
 export const executions = pgTable("executions", {

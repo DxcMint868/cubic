@@ -8,6 +8,7 @@ export interface ApprovalRequestInput {
   resource: string;
   risk_class: RiskClass;
   reason_codes: string[];
+  council?: string | null;
 }
 
 export interface ApprovalProvider {
@@ -25,6 +26,7 @@ export class DevApprovalProvider implements ApprovalProvider {
         type: "ledger",
         provider: "dev",
         status: "pending",
+        council: input.council ?? null,
       })
       .returning();
     return { approval_id: row.id };

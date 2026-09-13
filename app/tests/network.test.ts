@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db } from "../src/server/db/client";
 import {
-  agents, approvals, auditEvents, capabilities, decisions, executions,
+  agents, approvals, auditEvents, capabilities, councils, decisions, executions,
   intents, networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { emit } from "../src/server/events/bus";
@@ -120,6 +120,7 @@ async function wipeTenant(slug: string) {
     await db().delete(agents).where(eq(agents.tenantId, t.id));
     await db().delete(tools).where(eq(tools.tenantId, t.id));
     await db().delete(policies).where(eq(policies.tenantId, t.id));
+    await db().delete(councils).where(eq(councils.tenantId, t.id));
     await db().delete(tenants).where(eq(tenants.id, t.id));
   }
 }
