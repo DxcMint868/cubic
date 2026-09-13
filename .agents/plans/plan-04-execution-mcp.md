@@ -6,34 +6,90 @@ depends-on: [plan-03-capabilities]
 
 # Plan 04 — Real execution: executor registry, scanner service (dev), MCP facade
 
+**HOW TO USE:** **EXACT** blocks are verbatim contracts — copy them as written. If an EXACT block fails, STOP and report; never silently redesign. Steps are ordered.
+
 ## Objective
 
-Authorized operations actually execute behind the capability check with full lifecycle events, and the same pipeline becomes reachable from any MCP client.
+Authorized operations execute behind the capability check with full lifecycle events, and the same pipeline becomes reachable from any MCP client.
 
 ## Preconditions
 
-plan-03 merged; plan-00 §G/§H read.
+plan-03 merged; plan-00 §G (envelope) and §H (MCP boundary) read.
 
-## Tasks
+## Steps
 
-1. **`executors/registry.ts`**: `Executor` interface `execute(capability, args) → {summary, result}`; tool name → executor map; unknown tool is a structured error.
-2. **`executors/github.ts`**: GitHub-shaped executor — real API when `GITHUB_TOKEN` is present, otherwise canned deterministic responses explicitly marked `mode:"mock"` in the result summary (no equivalence claim). Tools: get_pull_request, read_file, merge_pull_request.
-3. **Scanner as a real HTTP service**: `POST /api/services/scanner/scan` — dev mode returns a deterministic synthetic report (`mode:"dev"`, `price_usd_cents` echoed). plan-05 replaces this with the x402 gate.
-4. **`executors/securityScan.ts`**: calls the scanner over HTTP (same-process loopback is fine) — proving the service boundary is a real hop, not a function call.
-5. **Execution phase in `orchestrator.ts`**: after issuance — consume capability → `tool.execution.started` → executor → `tool.execution.completed` (result_summary) or `tool.execution.failed` (error) → `executions` row linked to capability/task. A failed execution still consumes the capability (no retry with the same capability).
-6. **MCP facade**: `app/src/server/mcp/server.ts` + `POST /api/mcp` using `@modelcontextprotocol/sdk` (streamable HTTP). Tools mirror the gateway registry (`scanner_scan`, `github_get_pull_request`, `github_read_file`, `github_merge_pull_request`); every tool call funnels into `runToolCall` (agent identified via `x-cubic-agent` header). Same audit chain as HTTP ingest.
-7. **Task completion**: when a task's outstanding work is done (demo agent signals via a `task.complete` tool, or the orchestrator detects a terminal state), emit `task.completed` and set the task status.
-8. **Tests**: execution lifecycle events for success and failure; capability consumed exactly once per execution; MCP facade integration test — an in-process client lists tools, calls `scanner_scan`, and produces an audit chain identical in shape to HTTP ingest.
+1. **EXACT — `executors/registry.ts`** (union return — the second arm is the seam plan-05's 402 discovery uses):
+
+```ts
+export type ExecutorResult =
+  | { summary: string; result: Record<string, unknown>; mode: "real" | "mock" | "dev" }
+  | { status: "payment_required"; price_usd_cents: number; challenge: unknown };
+
+export interface Executor {
+  execute(input: {
+    capability: { id: string; action: string; resource: string; budgetUsdCents: number | null };
+    args: Record<string, unknown>;
+  }): Promise<ExecutorResult>;
+}
+// registry: tool name → Executor instance. Unknown tool = { ok:false, error:{code:"TOOL_NOT_FOUND"} }.
+```
+
+   Pin `@modelcontextprotocol/sdk` to the latest stable at implementation time and record the version in your report.
+
+2. **EXACT — `executors/github.ts`**: with `GITHUB_TOKEN` set, call the real API (`mode:"real"`). Without it, canned deterministic responses (`mode:"mock"`):
+
+```text
+get_pull_request   → result {repo, pr, title:"Fix auth flow", ci:"passing", approved:true}
+                     summary "PR #421 'Fix auth flow' — CI passing, approved (mock)"
+read_file          → result {path, content:"mock file content"}
+                     summary "Read <path> (mock)"
+merge_pull_request → result {merged:true}
+                     summary "Merged PR #<pr> (mock)"
+```
+
+3. **EXACT — scanner service route** `POST /api/services/scanner/scan` (dev mode, no payment yet). Request `{target: string}`. `price_usd_cents` comes from `config().X402_SCANNER_PRICE_CENTS` (never a hardcoded 25). Response:
+
+```json
+{ "ok": true, "data": {
+  "report_id": "rpt_",            // + randomBytes(4).toString("hex") — 8 hex chars
+  "target": "<target>",
+  "verdict": "clean",
+  "findings": [],
+  "mode": "dev",
+  "price_usd_cents": 25
+} }
+```
+
+4. **`executors/securityScan.ts`**: POST to the `endpoint` from `tools.executor_config` over real HTTP (loopback is fine — the point is a service boundary, not a function call). `summary` = `"Security scan of <target>: clean (dev mode)"`.
+
+5. **EXACT — execution phase in `orchestrator.ts`** (surgical addition after issuance): `consumeCapability(capabilityId, {action, resource, amount: budget ?? undefined})` — field mapping is explicit: `budgetUsdCents = <capabilities row>.budget_usd_cents`. Then:
+   - if the executor returns `{status:"payment_required", …}`: insert NO `executions` row, do NOT consume further — return `{payment_required: {price_usd_cents, challenge}}` in the response `data` (leaving the initial scan capability issued-but-unconsumed; it expires harmlessly). This is the ONLY non-executing path.
+   - else: insert `executions` row (`status:"running"`, `executor` from tool row) → emit `tool.execution.started` → executor runs (already returned) → update row (`succeeded` + `result_summary`, or `failed` + `error`) → emit `tool.execution.completed|failed`. Chain linkage `consumed → execution` runs through `capability_id` (present in every execution payload) — no other id threading needed.
+   - A failed execution still consumes the capability (no retry with the same capability). Response `data.execution` = `{execution_id, status, result_summary}`.
+   - `task.complete` tool: marks the task `completed`, emits `task.completed` `{task_id, status:"completed", summary}`, returns summary "Task completed".
+
+6. **EXACT — MCP facade** (`server/mcp/server.ts` + `POST /api/mcp`, streamable HTTP via `@modelcontextprotocol/sdk`). Tool list — name → underlying gateway tool, all funneling into `runToolCall` (agent from `x-cubic-agent` header):
+
+```text
+scanner_scan              → scanner.scan
+github_get_pull_request   → github.get_pull_request
+github_read_file          → github.read_file
+github_merge_pull_request → github.merge_pull_request
+task_complete             → task.complete
+```
+
+   Each tool returns the full tool-call `data` JSON as its content. Use the SDK's `McpServer` + `StreamableHTTPServerTransport`; no custom auth.
 
 ## Acceptance criteria
 
-- [ ] One allowed tool-call produces the complete chain in `/api/audit/trace/[taskId]`: intent → decision → capability → execution → result.
-- [ ] The scanner dev executor returns a deterministic report through a real HTTP hop; the execution consumes the capability exactly once.
-- [ ] An MCP client (in-process test) can list tools and invoke `scanner_scan` through the gateway with the same events as HTTP ingest.
-- [ ] A failing executor → `tool.execution.failed`; the capability is not reusable.
-- [ ] Mock GitHub mode is visibly labeled mock everywhere it surfaces.
-- [ ] `pnpm typecheck` / `lint` / `test` green.
+- [x] One allowed `github.get_pull_request` call produces the complete chain in `/api/audit/trace/[taskId]`: intent → decision → capability → execution, with `tool.execution.started` + `tool.execution.completed` and `mode:"mock"` visible.
+- [x] Scanner executor returns a deterministic report over a real HTTP hop with `report_id` matching `^rpt_[0-9a-f]{8}$`; execution consumes the capability exactly once.
+- [x] A forced-402 stub executor returns `{status:"payment_required"}` → response `data.payment_required` is set, NO `executions` row, NO `capability.consumed` event, capability still `issued`.
+- [x] In-process MCP client lists the 5 tools; `scanner_scan` produces the identical event chain shape as HTTP ingest.
+- [x] Failing executor → `tool.execution.failed`, `executions.status = 'failed'`, capability not reusable.
+- [x] `task.complete` → task row `completed`, `task.completed` event.
+- [x] `pnpm typecheck && pnpm lint && pnpm test` green.
 
 ## Out of scope
 
-Payments (plan-05), Ledger approvals (plan-06), frontend (plan-09).
+Real 402 settlement (plan-05), Ledger approvals (plan-06), frontend (plan-09).

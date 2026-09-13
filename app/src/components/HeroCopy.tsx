@@ -28,7 +28,7 @@ const TYPE_MODEL_MS = 65;
 const STATS = [
   { value: "1,842", label: "AGENTS ONLINE" },
   { value: "24,921", label: "INTENTS EVALUATED" },
-  { value: "23,884", label: "AUTHORIZED" },
+  { value: "23,884", label: "ALLOWED" },
   { value: "123", label: "ESCALATED" },
 ];
 

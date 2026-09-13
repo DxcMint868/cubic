@@ -10,6 +10,88 @@ Shared architecture baseline for the MVP slice plans (`plan-01` … `plan-10`) i
 Slice plans link here for shared contracts (data model, event model, API surface, env vars) instead of restating them.
 If a slice plan conflicts with this file, this file wins unless `PROJECT.md` / `DESIGN.md` / `AGENTS.md` say otherwise.
 
+**How to use the plans (binding rule for all implementation agents):** sections marked **EXACT** are verbatim contracts — copy the code/JSON as written, do not redesign, rename, or "improve" them. If an **EXACT** block fails to compile or is factually wrong, STOP and report the failure in your final report instead of improvising a replacement. Steps inside a plan are ordered; execute them in order.
+
+## B.1 EXACT — shared domain types
+
+Every server module imports these from a single `app/src/server/domain.ts` (created in plan-01). No plan may redefine them.
+
+```ts
+export type RiskClass = "low" | "medium" | "high" | "critical";
+export type DecisionType = "allow" | "deny" | "escalate";
+
+export interface ToolCall {
+  task_id?: string;                    // uuid; omit → gateway uses the agent's latest open task
+  agent_key: string;                   // "agent:8472"
+  tool: string;                        // "github.merge_pull_request"
+  arguments: Record<string, unknown>;
+}
+
+export interface NormalizedIntent {
+  tool: string;                        // "github.merge_pull_request" (echoed from the ToolCall)
+  action: string;                      // "read_file" | "merge_pull_request" | "purchase_security_scan" | ...
+  resource: string;                    // "acme/backend#421" | "acme/backend/.env.production"
+  risk_class: RiskClass;
+  resource_class: "normal" | "secret" | "cross_task";
+  amount_usd_cents?: number;           // present only for purchase intents
+}
+
+export interface Facts {
+  agent_status: "active" | "suspended";
+  agent_reputation: number;            // 0..1
+  tool_default_risk: RiskClass;
+  task_budget_usd_cents: number | null;
+  budget_spent_usd_cents: number;      // sum of completed payments for the task
+}
+
+export type ReasonCode =
+  | "secret_resource"
+  | "resource_outside_task"
+  | "tool_not_allowed"
+  | "service_not_approved"
+  | "budget_exceeded"
+  | "reputation_below_threshold"
+  | "risk_requires_approval"
+  | "policy_default_allow"
+  | "policy_default_deny"
+  | "no_default_rule"
+  | "approval_rejected"
+  | "payment_failed";
+
+export interface Reason { code: ReasonCode; detail?: string }
+
+export interface DecisionResult {
+  decision: DecisionType;
+  matched_policy: string;              // "default-v1"
+  matched_rule_id: string;             // "deny-secret-resources"
+  reasons: Reason[];
+  risk_score: 10 | 40 | 70 | 90;       // low | medium | high | critical
+}
+
+export interface IssuedCapability {
+  capability_id: string;               // uuid
+  subject: string;                     // "agent:8472"
+  action: string;
+  resource: string;
+  constraints: Record<string, unknown>;
+  budget_usd_cents: number | null;
+  expires_at: string;                  // ISO-8601
+  nonce: string;                       // 32-byte hex (64 chars)
+  policy_hash: string;                 // sha256 hex of canonical matched-policy JSON
+}
+```
+
+API error codes (single enum, used by every route) — EXACT code for `domain.ts`:
+
+```ts
+export const apiErrorCodes = [
+  "AGENT_NOT_FOUND", "TASK_NOT_FOUND", "TOOL_NOT_FOUND", "INVALID_REQUEST",
+  "CAPABILITY_REJECTED", "PAYMENT_REQUIRED", "INTERNAL",
+] as const;
+export type ApiErrorCode = (typeof apiErrorCodes)[number];
+```
+
+
 ## A. Current-state assessment
 
 Verified against the working tree (2026-09-10):
@@ -65,8 +147,7 @@ app/src/server/
   payments/
     x402.ts               # x402 challenge fulfillment + settlement recording (plan-05)
   ledger/
-    provider.ts           # SecretProvider / Approval boundary
-    dev.ts                # DevApprovalProvider (explicitly NOT hardware)
+    provider.ts           # ApprovalProvider re-export + SecretProtector interface
     keyring.ts            # wallet-cli ring provider (plan-06)
   graph/
     agent0.ts             # Agent0/ERC-8004 subgraph client (plan-07)
@@ -104,7 +185,7 @@ Boundary rules (non-negotiable, from `AGENTS.md` / `PROJECT.md`):
 
 Demo task: *"Analyze this service and purchase a security scan if permitted to spend up to $0.50."*
 
-1. Scripted agent opens task `task:demo-1` (budget 50 cents) and calls `POST /api/gateway/tool-call` with `{task_id, agent_key: "agent:8472", tool: "scanner.scan", arguments: {target}}` — or the same call via the MCP facade.
+1. Scripted agent uses the seeded demo task (uuid, budget 50 cents) and calls `POST /api/gateway/tool-call` with `{task_id, agent_key: "agent:8472", tool: "scanner.scan", arguments: {target}}` — or the same call via the MCP facade.
 2. `ingest.ts` resolves agent/tool/task/policy → intent row → `intent.created`.
 3. `normalize.ts` → structured intent `{action: "purchase_security_scan", resource, risk_class: "medium"}`.
 4. `context/` gathers facts: task budget remaining, tool default risk, agent reputation (Graph in plan-07).
@@ -124,7 +205,7 @@ Demo task: *"Analyze this service and purchase a security scan if permitted to s
 | Spend exceeds task budget | DENY (payment policy) | same |
 | Tampered / unknown capability | rejected, no execution | `capability.rejected` |
 | Expired capability | rejected reason=expired | `capability.rejected` |
-| Capability replay (nonce reuse) | rejected reason=replay | `capability.rejected` |
+| Capability reused (same capability consumed again) | rejected reason=replay | `capability.rejected` |
 | Low agent reputation | ESCALATE (or DENY per policy) | `policy.evaluated`, `capability.escalated` |
 | High-risk action | ESCALATE → approval required | `capability.escalated`, `ledger.approval.*` |
 | Approval rejected | no capability, task records denial | `ledger.approval.completed` (rejected) |
@@ -143,7 +224,7 @@ All tables tenant-scoped where relevant. UUID pk defaults; `timestamptz` everywh
 - `policies(id, tenant_id, name, version int, rules jsonb, created_at)` — `rules` is the deterministic rule document (shape finalized in plan-02)
 - `tasks(id, tenant_id, agent_id→agents, title, budget_usd_cents?, status, created_at)`
 - `intents(id, task_id→tasks, agent_id, tool, resource, arguments_redacted jsonb, risk_class, origin, normalized jsonb, created_at)`
-- `decisions(id, intent_id→intents, decision check(allow|deny|escalate), matched_policy, reasons jsonb, context_snapshot_hash, risk_score, created_at)`
+- `decisions(id, intent_id→intents, decision check(allow|deny|escalate), matched_policy, matched_rule_id, reasons jsonb, context_snapshot_hash, risk_score, created_at)`
 - `capabilities(id, decision_id→decisions, subject, action, resource, constraints jsonb, budget_usd_cents?, expires_at, nonce unique, policy_hash, status check(issued|consumed|expired|revoked), issued_at, consumed_at?)`
 - `approvals(id, decision_id→decisions, type check(ledger|human), status check(pending|approved|rejected), provider, provider_ref?, requested_at, completed_at?)`
 - `executions(id, capability_id→capabilities, tool, status check(running|succeeded|failed), executor, result_summary, error?, started_at, completed_at?)`
@@ -161,11 +242,29 @@ Envelope (every event):
 { "event_id": "uuid", "event_type": "…", "tenant_id": "…", "task_id": "…", "agent_id": "…", "occurred_at": "ISO-8601", "payload": {} }
 ```
 
-Canonical types (union in `events/types.ts`, zod-validated):
+**EXACT — canonical event types and payload fields** (zod schemas in `events/types.ts`, created in plan-01; every field below is required unless marked `?`):
 
-`intent.created`, `policy.evaluated`, `capability.issued`, `capability.denied`, `capability.escalated`, `capability.consumed`, `capability.rejected`, `ledger.approval.requested`, `ledger.approval.completed`, `payment.requested`, `payment.completed`, `payment.failed`, `service.discovered`, `tool.execution.started`, `tool.execution.completed`, `tool.execution.failed`, `task.completed`
+| event_type | payload fields |
+|---|---|
+| `intent.created` | `intent_id`, `tool`, `resource?`, `risk_class`, `origin: "agent"\|"payment_discovery"` |
+| `policy.evaluated` | `intent_id`, `decision_id`, `decision`, `matched_policy`, `matched_rule_id`, `reason_codes: string[]`, `risk_score: number` |
+| `capability.issued` | `capability_id`, `decision_id`, `subject`, `action`, `resource`, `budget_usd_cents?`, `expires_at`, `nonce`, `policy_hash` |
+| `capability.denied` | `intent_id`, `decision_id`, `reason_codes: string[]` |
+| `capability.escalated` | `intent_id`, `decision_id`, `approval_id`, `reason_codes: string[]` |
+| `capability.consumed` | `capability_id`, `execution_id?` |
+| `capability.rejected` | `capability_id?`, `reason: "not_found"\|"replay"\|"expired"\|"action_mismatch"\|"resource_mismatch"\|"budget_exceeded"`, `requested_action?`, `requested_resource?` |
+| `ledger.approval.requested` | `approval_id`, `decision_id`, `provider: "dev"\|"ledger"`, `action`, `resource` |
+| `ledger.approval.completed` | `approval_id`, `decision_id`, `provider`, `outcome: "approved"\|"rejected"` |
+| `payment.requested` | `payment_id`, `capability_id`, `service`, `network: "hedera"`, `amount_usd_cents` |
+| `payment.completed` | `payment_id`, `capability_id`, `settlement_ref` |
+| `payment.failed` | `payment_id`, `capability_id`, `error_code` |
+| `service.discovered` | `intent_id`, `service`, `price_usd_cents`, `challenge_ref` |
+| `tool.execution.started` | `execution_id`, `capability_id`, `tool`, `resource` |
+| `tool.execution.completed` | `execution_id`, `capability_id`, `result_summary` |
+| `tool.execution.failed` | `execution_id`, `capability_id`, `error_code` |
+| `task.completed` | `task_id`, `status: "completed"\|"failed"`, `summary?` |
 
-Chain linkage: payloads carry the ids needed to reconstruct `agent → task → intent → decision → capability → payment/execution → result` (e.g. `policy.evaluated` carries `intent_id` + `decision_id`).
+Chain linkage: the fields above are exactly what makes `agent → task → intent → decision → capability → payment/execution → result` reconstructable (via the envelope's `task_id`/`agent_id` plus the id fields inside payloads).
 
 Public projection mapping (plan-08) is an **allowlist**: `{event_type → action_class, agent pseudonym, category, outcome, risk_class}`. Never projected: tool arguments, prompts, resource strings, secrets, policy internals, tenant identity.
 
@@ -183,9 +282,55 @@ Public projection mapping (plan-08) is an **allowlist**: `{event_type → action
 | POST | `/api/services/scanner/scan` | executor | the paid service (dev mode → x402-gated in 05) | 04/05 |
 | POST | `/api/approvals/[id]/resolve` | dev approval flow | approve/reject a pending approval | 06 |
 | POST | `/api/demo/seed` | demo | reset + seed demo tenant fixtures | 01 |
+| GET | `/api/network/stats` | network UI | aggregate counters from `network_events` | 08 |
+| POST | `/api/demo/run` | demo | seed + happy-path sequence (plan-10 owns this route) | 10 |
 | POST | `/api/mcp` | MCP clients | streamable-HTTP MCP facade | 04 |
 
 Agent identification for MVP: `x-cubic-agent` header (agent_key) plus `x-cubic-task` header or `task_id` in the body. Real authentication is explicitly out of scope (§M).
+
+**EXACT — response envelope (every route, no exceptions):**
+
+```json
+// success — HTTP 2xx
+{ "ok": true, "data": { } }
+// error — HTTP 4xx/5xx
+{ "ok": false, "error": { "code": "TOOL_NOT_FOUND", "message": "human-readable" } }
+```
+
+**EXACT — `POST /api/gateway/tool-call` response `data` shape** (fields fill in as waves land; unset stages are `null`, never omitted):
+
+```json
+{
+  "intent_id": "uuid",
+  "decision": "allow",
+  "matched_policy": "default-v1",
+  "matched_rule_id": "default-allow",
+  "reasons": [{ "code": "policy_default_allow" }],
+  "risk_score": 10,
+  "approval_id": null,
+  "payment_required": null,
+  "capability": { "capability_id": "uuid", "subject": "agent:8472", "action": "read_file", "resource": "acme/backend/README.md", "constraints": {}, "budget_usd_cents": null, "expires_at": "ISO-8601", "nonce": "64-hex", "policy_hash": "sha256-hex" },
+  "payment": null,
+  "execution": null
+}
+```
+
+Stages fill in as their waves land; unset stages are `null`, never omitted. When set, `payment_required = { "price_usd_cents": number, "challenge": unknown }` (the agent re-submits a purchase intent; see §J).
+
+**EXACT — `GET /api/audit/trace/[taskId]` response `data` shape:**
+
+```json
+{
+  "task": { "id": "uuid", "title": "…", "budget_usd_cents": 50, "status": "open" },
+  "chain": [
+    { "intent": { }, "decision": { } | null, "capability": { } | null,
+      "payments": [ ], "executions": [ ], "approvals": [ ] }
+  ],
+  "events": [ { "event_type": "…", "occurred_at": "…", "payload": { } } ]
+}
+```
+
+`chain` is ordered by intent creation; `events` is the full ordered `audit_events` list for the task.
 
 ## H. MCP integration
 
@@ -197,7 +342,7 @@ Cubic receives tool calls at two equivalent boundaries: the HTTP ingest route an
 
 ## I. Ledger integration
 
-Provider boundary in `ledger/`. `DevApprovalProvider` (default): in-app approval queue — explicitly labeled dev, never claimed as hardware. `LedgerKeyRingProvider` (plan-06): `wallet-cli ring` for (a) high-risk approval completion and (b) Key Ring encryption of the scanner payment authority key at rest. Plan-06 starts with an install/verify spike because wallet-cli is absent on this machine; if it cannot run here, the hardware path is documented as blocked and DevProvider remains — never equivalence claims.
+Approval boundary: the `ApprovalProvider` interface (defined in `gateway/approval/provider.ts`, plan-02) with `DevApprovalProvider` as the default (in-app approval queue — explicitly labeled `provider:"dev"`, never claimed as hardware). `ledger/provider.ts` (plan-06) re-exports that interface and adds the `SecretProtector` interface; `LedgerKeyRingProvider` (plan-06) implements both via `wallet-cli ring`: (a) high-risk approval completion and (b) Key Ring encryption of the scanner payment authority key at rest. Plan-06 starts with an install/verify spike because wallet-cli is absent on this machine; if it cannot run here, the hardware path is documented as blocked and DevProvider remains — never equivalence claims.
 
 ## J. Hedera integration
 
