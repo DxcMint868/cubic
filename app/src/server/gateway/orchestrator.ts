@@ -165,6 +165,37 @@ export async function runExecutionPhase(input: ExecutionPhaseInput): Promise<Exe
   if (!("threw" in outcome) && "status" in outcome) {
     // payment_required — the ONLY non-executing path: no executions row, no
     // consume; the capability stays issued-but-unconsumed and expires.
+    // The 402 is still a real invoice: record it (payment row + audit
+    // event) so /console/payments reflects it. The row stays "requested" —
+    // settlement happens later through the discovery-purchase path, which
+    // inserts its own row (this branch is unreachable for purchases: the
+    // purchase-discovery gate above returns before the executor runs).
+    const [requestedRow] = await db()
+      .insert(payments)
+      .values({
+        capabilityId,
+        service: "scanner",
+        network: "hedera",
+        amountUsdCents: outcome.price_usd_cents,
+        status: "requested",
+      })
+      .returning();
+    await emit(
+      {
+        event_type: "payment.requested",
+        tenant_id: tenantId,
+        task_id: taskId,
+        agent_id: agentId,
+        payload: {
+          payment_id: requestedRow.id,
+          capability_id: capabilityId,
+          service: "scanner",
+          network: "hedera",
+          amount_usd_cents: outcome.price_usd_cents,
+        },
+      },
+      meta,
+    );
     return {
       capability,
       payment_required: { price_usd_cents: outcome.price_usd_cents, challenge: outcome.challenge },
