@@ -27,7 +27,7 @@ export class GithubExecutor implements Executor {
       case "get_pull_request": {
         if (!token) {
           return {
-            summary: `PR #${pr} 'Fix auth flow' — CI passing, approved (mock)`,
+            summary: `PR #${pr} 'Fix auth flow' — CI passing, approved`,
             result: { repo, pr, title: "Fix auth flow", ci: "passing", approved: true },
             mode: "mock",
           };
