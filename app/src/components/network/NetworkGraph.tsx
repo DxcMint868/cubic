@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { NetworkEvent } from "@/lib/api";
-import { SERVICES, pulseLabel, serviceFor } from "./topology";
+import { SERVICES, serviceFor } from "./topology";
 
 interface AgentNode {
   pseudonym: string;
@@ -26,12 +26,11 @@ interface Pulse {
   outcome: string;
   risk: string;
   serviceId: string;
-  label: string;
   start: number;
   duration: number;
 }
 
-const PULSE_MS = 1700;
+const PULSE_MS = 1200;
 const BLOCKED = new Set([
   "deny",
   "rejected",
@@ -126,7 +125,9 @@ export default function NetworkGraph({
     let hover: string | null = null;
     let primed = false;
     let lastSeenId = 0;
-    let pulses: Pulse[] = [];
+    // One live signal per agent: a fresh event for an agent restarts its dot
+    // instead of stacking, so a burst reads as one signal per rail.
+    const pulses = new Map<string, Pulse>();
     const serviceGlow = new Map<string, number>();
     let hit: { pseudonym: string; x: number; y: number; size: number }[] = [];
 
@@ -180,7 +181,7 @@ export default function NetworkGraph({
         if (fresh.length > 0) {
           lastSeenId = fresh[fresh.length - 1].id;
           for (const event of fresh.slice(-12)) {
-            pulses.push({
+            pulses.set(event.agent_pseudonym, {
               id: event.id,
               pseudonym: event.agent_pseudonym,
               actionClass: event.action_class,
@@ -188,7 +189,6 @@ export default function NetworkGraph({
               outcome: event.outcome,
               risk: event.risk_class,
               serviceId: serviceFor(event),
-              label: pulseLabel(event),
               start: now,
               duration: PULSE_MS,
             });
@@ -196,7 +196,9 @@ export default function NetworkGraph({
         }
       }
 
-      pulses = pulses.filter((pulse) => now - pulse.start < pulse.duration);
+      for (const [key, pulse] of pulses) {
+        if (now - pulse.start >= pulse.duration) pulses.delete(key);
+      }
       for (const [id, until] of serviceGlow) {
         if (now > until) serviceGlow.delete(id);
       }
@@ -280,80 +282,34 @@ export default function NetworkGraph({
       ctx.fillStyle = "rgba(255,255,255,0.4)";
       ctx.fillText("GATEWAY", gx, gy + 28);
 
-      // Traveling pulses along the two-leg path.
-      for (const pulse of pulses) {
+      // Signals: one small dot traveling the rail, nothing else. No tails,
+      // no labels — the feed below says what flowed; the canvas just moves.
+      for (const pulse of pulses.values()) {
         const a = agentPos.get(pulse.pseudonym);
         const s = svcPos.get(pulse.serviceId);
         if (!a || !s) continue;
         const t = Math.min(1, (now - pulse.start) / pulse.duration);
         const blocked = BLOCKED.has(pulse.outcome);
         const head = pathPoint(a.x, a.y, gx, gy, s.x, s.y, t, blocked);
-        const tailT = Math.max(0, t - 0.16);
-        const tail = pathPoint(a.x, a.y, gx, gy, s.x, s.y, tailT, blocked);
-        const fade = blocked ? Math.max(0, 1 - Math.max(0, t - 0.58) / 0.42) : 1 - t * 0.7;
-        const alpha = Math.max(0.12, fade);
+        const fade = blocked ? Math.max(0, 1 - Math.max(0, t - 0.58) / 0.42) : 1 - t * 0.5;
         const escalated = pulse.outcome === "escalate" || pulse.outcome === "escalated";
-        if (!blocked && t > 0.82) serviceGlow.set(pulse.serviceId, now + 900);
+        if (!blocked && t > 0.85) serviceGlow.set(pulse.serviceId, now + 900);
 
         ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.strokeStyle = "#e8e8e8";
-
-        if (pulse.actionClass === "payment") {
-          ctx.lineWidth = 2;
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.moveTo(tail.x, tail.y);
-          ctx.lineTo(head.x, head.y);
-          ctx.stroke();
-          ctx.translate(head.x, head.y);
-          ctx.rotate(Math.PI / 4);
-          square(0, 0, 7, !blocked);
+        ctx.globalAlpha = Math.max(0.2, fade);
+        if (blocked) {
+          ctx.fillStyle = "#8a8a8a";
+          square(head.x, head.y, 3, true);
+        } else if (escalated) {
+          ctx.strokeStyle = "#e8e8e8";
+          ctx.lineWidth = 1;
+          square(head.x, head.y, 6, false);
         } else {
-          if (pulse.actionClass === "intent") {
-            ctx.setLineDash([1, 3]);
-            ctx.lineWidth = 1;
-          } else if (pulse.actionClass === "approval") {
-            ctx.setLineDash([5, 4]);
-            ctx.lineWidth = 1;
-          } else if (pulse.actionClass === "execution") {
-            ctx.setLineDash([]);
-            ctx.lineWidth = 3;
-          } else if (pulse.actionClass === "authorization") {
-            ctx.setLineDash([]);
-            ctx.lineWidth = 2;
-          } else if (pulse.actionClass === "discovery") {
-            ctx.setLineDash([1, 2]);
-            ctx.lineWidth = 1;
-          } else if (pulse.actionClass === "evaluation") {
-            ctx.setLineDash([]);
-            ctx.lineWidth = 1.5;
-          } else if (pulse.actionClass === "task") {
-            ctx.setLineDash([1, 5]);
-            ctx.lineWidth = 1;
-          } else {
-            ctx.setLineDash([]);
-            ctx.lineWidth = blocked ? 1 : 1.5;
-          }
-          ctx.beginPath();
-          ctx.moveTo(tail.x, tail.y);
-          ctx.lineTo(head.x, head.y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.translate(head.x, head.y);
-          square(0, 0, escalated ? 9 : 6, !blocked && !escalated);
+          ctx.fillStyle = "#e8e8e8";
+          square(head.x, head.y, 4, true);
         }
         ctx.restore();
-
-        // Label near the head — what is flowing, and its verdict.
-        ctx.save();
-        ctx.globalAlpha = Math.max(0.15, fade) * 0.85;
-        ctx.fillStyle = blocked ? "#8a8a8a" : "#c9c9c9";
-        ctx.font = "8px ui-monospace, Menlo, monospace";
-        ctx.fillText(pulse.label, head.x, head.y - 12);
-        ctx.restore();
       }
-      ctx.font = "9px ui-monospace, Menlo, monospace";
 
       // Service nodes (right column).
       for (const svc of SERVICES) {

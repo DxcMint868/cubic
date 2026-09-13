@@ -22,14 +22,10 @@ const STATE_LEGEND = [
   { label: "DASHED — DENIED / REJECTED", border: "1px dashed #8a8a8a", core: false, dash: true },
 ];
 
-const ACTION_LEGEND = [
-  { label: "INTENT · DOTTED", stroke: "dotted" },
-  { label: "EVALUATION · SOLID", stroke: "solid" },
-  { label: "AUTHORIZATION · SOLID 2PX", stroke: "solid" },
-  { label: "EXECUTION · BOLD", stroke: "solid" },
-  { label: "APPROVAL · LONG DASH", stroke: "dashed" },
-  { label: "TASK · HAIRLINE", stroke: "dotted" },
-  { label: "PAYMENT · ◆ MARKER", stroke: "solid" },
+const SIGNAL_LEGEND = [
+  { label: "SIGNAL · BRIGHT DOT — ALLOWED", fill: "#e8e8e8", hollow: false },
+  { label: "SIGNAL · HOLLOW SQUARE — ESCALATED", fill: "#e8e8e8", hollow: true },
+  { label: "SIGNAL · DIM DOT — DENIED / REJECTED, DIES AT GATEWAY", fill: "#8a8a8a", hollow: false },
 ];
 
 function Stat({ value, label }: { value: string; label: string }) {
@@ -178,10 +174,11 @@ export default function NetworkPage() {
         >
           Every cube on the left is an agent pseudonym. Pulses are real
           projected events from the gateway pipeline — decisions, capabilities, payments,
-          executions — traveling agent → gateway → service, labeled with what
-          flowed and its verdict. Denied pulses die at the gateway and never
-          reach a service. The public surface never shows prompts, arguments,
-          resources, or tenant identity.
+          executions — traveling agent → gateway → service as small signals:
+          a bright dot for allowed, a hollow square for escalated, a dim dot
+          for denied. Denied signals die at the gateway and never reach a
+          service. The feed below says what each signal was. The public surface
+          never shows prompts, arguments, resources, or tenant identity.
         </p>
         <p
           className="mono"
@@ -528,16 +525,15 @@ export default function NetworkPage() {
                   </div>
                 ))}
                 <div style={{ height: 1, background: "rgba(255,255,255,0.1)" }} />
-                {ACTION_LEGEND.map((item) => (
+                {SIGNAL_LEGEND.map((item) => (
                   <div key={item.label} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <span
                       aria-hidden
                       style={{
-                        width: 26,
-                        height: 0,
-                        borderTop: `2px ${item.stroke} ${
-                          item.stroke === "dotted" ? "#8a8a8a" : "#e8e8e8"
-                        }`,
+                        width: item.hollow ? 9 : 7,
+                        height: item.hollow ? 9 : 7,
+                        background: item.hollow ? "transparent" : item.fill,
+                        border: item.hollow ? `1px solid ${item.fill}` : "none",
                         flexShrink: 0,
                       }}
                     />

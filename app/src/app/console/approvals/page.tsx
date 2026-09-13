@@ -40,11 +40,11 @@ export default function ConsoleApprovals() {
   const [signedBy, setSignedBy] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Live queue: re-fetch every 5s so requests pushed from the executor tab
+  // Live queue: re-fetch every 2s so requests pushed from the executor tab
   // appear without a manual refresh. Pauses while a resolve is in flight.
   useEffect(() => {
     if (busy) return;
-    const timer = setInterval(() => reload(), 5000);
+    const timer = setInterval(() => reload(), 2000);
     return () => clearInterval(timer);
   }, [busy, reload]);
 
