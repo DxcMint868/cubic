@@ -257,7 +257,7 @@ describe("plan-04 POST /api/mcp (streamable HTTP, stateless)", () => {
     expect(data.decision).toBe("allow");
     expect(data.execution).toMatchObject({
       status: "succeeded",
-      result_summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      result_summary: "PR #421 'Fix auth flow' — CI passing, approved",
     });
 
     const getRes = await mcpGET();

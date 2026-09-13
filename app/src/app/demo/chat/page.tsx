@@ -201,6 +201,14 @@ function TurnView({ turn }: { turn: ChatTurn }) {
         {turn.lines.payment && (
           <p className="mono" style={{ fontSize: 11, color: "#8a8a8a" }}>{turn.lines.payment}</p>
         )}
+        {turn.follow_up && (
+          <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
+            <p className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5a5a5a" }}>
+              AGENT FOLLOW-UP
+            </p>
+            <div style={{ fontSize: 14, color: "#e8e8e8", maxWidth: "85%" }}>{turn.follow_up}</div>
+          </div>
+        )}
         {turn.rejections.map((r) => (
           <p key={r.capability_id} className="mono" style={{ fontSize: 11, color: "#e8e8e8" }}>
             {`capability ${r.step} → rejected (${r.reason})`}

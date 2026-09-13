@@ -200,9 +200,9 @@ describe("plan-04 executors", () => {
       capability: { ...base, action: "get_pull_request" },
       args: { repo: "acme/backend", pr: 421 },
     });
-    expect("summary" in pr && pr.summary).toBe("PR #421 'Fix auth flow' — CI passing, approved (mock)");
+    expect("summary" in pr && pr.summary).toBe("PR #421 'Fix auth flow' — CI passing, approved");
     expect(pr).toEqual({
-      summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      summary: "PR #421 'Fix auth flow' — CI passing, approved",
       result: { repo: "acme/backend", pr: 421, title: "Fix auth flow", ci: "passing", approved: true },
       mode: "mock",
     });
@@ -314,7 +314,7 @@ describe("plan-04 orchestrator execution phase", () => {
     if (!result.ok) return;
     expect(result.data.execution).toMatchObject({
       status: "succeeded",
-      result_summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      result_summary: "PR #421 'Fix auth flow' — CI passing, approved",
     });
 
     const res = await traceGET(
@@ -330,7 +330,7 @@ describe("plan-04 orchestrator execution phase", () => {
     expect(entry.executions).toHaveLength(1);
     expect(entry.executions[0]).toMatchObject({
       tool: "github.get_pull_request", status: "succeeded", executor: "github",
-      result_summary: "PR #421 'Fix auth flow' — CI passing, approved (mock)",
+      result_summary: "PR #421 'Fix auth flow' — CI passing, approved",
     });
 
     const eventTypes = body.data.events.map((e: { event_type: string }) => e.event_type);
@@ -352,7 +352,9 @@ describe("plan-04 orchestrator execution phase", () => {
     );
     expect(started).toBeDefined();
     expect(completed).toBeDefined();
-    expect(completed.payload.result_summary).toContain("(mock)"); // mode:"mock" visible
+    // Full-fiction posture: no "(mock)" parenthetical in summaries; the
+    // execution row's mode field ("mock") is the honest signal.
+    expect(completed.payload.result_summary).toContain("Fix auth flow");
     expect(eventTypes[0]).toBe("intent.created");
   }, 30000);
 

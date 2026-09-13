@@ -26,7 +26,7 @@ import { consumeCapability } from "../capability/verify";
 import type { Rule } from "../gateway/policy/engine";
 import { CHAT_TEMPLATES, getTemplate, type ChatTemplate } from "./templates";
 import { loadAgentIdentity, redirectFor } from "./identity";
-import { chatModel, parseFreeText, parseProviderConfigured } from "./parse";
+import { chatModel, parseFreeText, parseProviderConfigured, synthesizeFollowUp } from "./parse";
 import { ANCHORED_TYPES, anchorTopicId, fingerprint, topicUrl } from "../anchors/hcs";
 
 export { CHAT_TEMPLATES };
@@ -58,6 +58,8 @@ export interface ChatTurn {
   client_label: string;
   /** The agent's conversational opening line (canned or model-drafted). */
   reply: string | null;
+  /** Post-tool answer: model synthesis of the execution result, allow paths only. */
+  follow_up: string | null;
   task_id: string | null;
   tool: string | null;
   arguments: Record<string, unknown>;
@@ -258,6 +260,7 @@ function buildTurn(base: Partial<ChatTurn> & { chat_text: string; task_id: strin
     template_id: null,
     client_label: DEMO_CLIENT_LABEL,
     reply: null,
+    follow_up: null,
     tool: null,
     arguments: {},
     transport: null,
@@ -291,6 +294,7 @@ async function hydrateTurn(
   data: ToolCallData,
   transport: "mcp" | "gateway",
   toolsConnected: number | null,
+  synth?: { message: string; tool: string; agent: { key: string; name: string; soul: string | null; memory: string | null; tools: string[] } },
 ): Promise<ChatTurn> {
   const [intentRow] = await db().select().from(intents).where(eq(intents.id, data.intent_id));
   const intent = (intentRow?.normalized ?? null) as NormalizedIntent | null;
@@ -367,6 +371,15 @@ async function hydrateTurn(
     payment_required: data.payment_required,
     lines,
     receipt,
+    // Agent loop, second half: on allow + succeeded execution, the tool
+    // result goes back to the model so it can answer the user's question.
+    // Display text only — never re-enters the gateway. Any other path
+    // (deny, escalate, failure, payment hold) keeps follow_up null and the
+    // enforcement display stands alone.
+    follow_up:
+      synth && data.decision === "allow" && data.execution?.status === "succeeded" && data.execution.result_summary
+        ? await synthesizeFollowUp(synth.message, synth.tool, data.execution.result_summary, { agent: synth.agent })
+        : null,
     anchors: await turnAnchors(taskId, data),
     trace_url: taskId ? `/console/tasks/${taskId}` : null,
     tools: { connected: toolsConnected },
@@ -537,6 +550,7 @@ export async function runChatTurn(input: ChatInput, baseUrl: string): Promise<Ch
     data.data,
     data.transport,
     toolsConnected,
+    { message: chatText, tool, agent: identity },
   );
 }
 

@@ -17,7 +17,7 @@ import {
 import { runToolCall } from "../src/server/gateway/orchestrator";
 import { seed } from "../src/server/demo/seed";
 import { CHAT_TEMPLATES, PLAY_BEATS, getTemplate } from "../src/server/demo/templates";
-import { validateParsed, parseFreeText } from "../src/server/demo/parse";
+import { validateParsed, parseFreeText, synthesizeFollowUp } from "../src/server/demo/parse";
 import { clearMcpCacheForTests } from "../src/server/demo/chat";
 import { loadAgentIdentity } from "../src/server/demo/identity";
 import { buildSystemPrompt } from "../src/server/demo/parse";
@@ -688,4 +688,56 @@ describe("plan-16 parseFreeText refusal voice (mocked provider)", () => {
       delete process.env.OPENROUTER_API_KEY;
     }
   });
+});
+
+describe("plan-16 post-tool synthesis (mocked provider)", () => {
+  const textResponse = (content: string) =>
+    ({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content } }] }),
+    }) as unknown as Response;
+
+  it("answers from the tool result in the speaker's voice", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    try {
+      const out = await synthesizeFollowUp(
+        "Read PR #421 and tell me what changed",
+        "github.get_pull_request",
+        "PR #421 'Fix auth flow' — CI passing, approved",
+        {
+          fetchImpl: (async () =>
+            textResponse("PR #421 fixes the auth flow — CI is green and it's approved, ready for merge.")) as unknown as typeof fetch,
+          agent: { key: "agent:8472", name: "deploy-agent" },
+        },
+      );
+      expect(out).toContain("auth flow");
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
+  });
+
+  it("provider unset → null (turn renders as today)", async () => {
+    const out = await synthesizeFollowUp("hi", "task.complete", "Task completed");
+    expect(out).toBeNull();
+  });
+
+  it("provider failure → null, never throws", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    try {
+      const out = await synthesizeFollowUp("hi", "task.complete", "Task completed", {
+        fetchImpl: (async () => ({ ok: false, json: async () => null }) as unknown as Response) as unknown as typeof fetch,
+      });
+      expect(out).toBeNull();
+    } finally {
+      delete process.env.OPENROUTER_API_KEY;
+    }
+  });
+
+  it("template allow turn without provider carries follow_up null", async () => {
+    const { json } = await chat({ template_id: "deploy-read" });
+    expect(json.ok).toBe(true);
+    const turn = json.data!.turn;
+    expect(turn.decision).toBe("allow");
+    expect(turn.follow_up).toBeNull();
+  }, 60000);
 });

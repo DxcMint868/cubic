@@ -414,6 +414,7 @@ export interface ChatTurn {
   chat_text: string;
   client_label: string;
   reply: string | null;
+  follow_up: string | null;
   task_id: string | null;
   tool: string | null;
   arguments: Record<string, unknown>;

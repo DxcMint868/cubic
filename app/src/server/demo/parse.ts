@@ -190,6 +190,76 @@ export interface ParseDeps {
   };
 }
 
+// Post-tool synthesis: the agent loop's second half. After an ALLOW +
+// succeeded execution, the tool result goes BACK to the model (same voice,
+// same identity block) so it can answer the user's actual question instead
+// of stopping at the summary line. Display text only — the follow-up never
+// re-enters the gateway, so no authorization loop. Provider unset, timeout,
+// refusal, or malformed reply → null (turn renders exactly as today).
+// Never throws.
+export async function synthesizeFollowUp(
+  message: string,
+  tool: string,
+  resultSummary: string,
+  deps: ParseDeps = {},
+): Promise<string | null> {
+  if (!parseProviderConfigured()) return null;
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PARSE_TIMEOUT_MS);
+  try {
+    const res = await fetchImpl("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: chatModel(),
+        messages: [
+          { role: "system", content: buildFollowUpPrompt(tool, deps.agent) },
+          {
+            role: "user",
+            content: `The user asked: "${message}"\n\nYou called ${tool} through the gateway (allowed, executed). The tool returned:\n${resultSummary}\n\nAnswer the user's question now, using the tool result.`,
+          },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as {
+      choices?: Array<{ message?: { content?: unknown } }>;
+    } | null;
+    const content = body?.choices?.[0]?.message?.content;
+    if (typeof content !== "string") return null;
+    const trimmed = content.trim().slice(0, 600);
+    return trimmed === "" ? null : trimmed;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Identity block mirrors buildSystemPrompt (same voice, same tools) but the
+// job is answering, not drafting: plain prose reply, no JSON, and the result
+// is the source of truth — never invent tool output beyond it.
+function buildFollowUpPrompt(tool: string, agent?: ParseDeps["agent"]): string {
+  const lines: string[] = [];
+  if (agent) {
+    lines.push(`You ARE ${agent.name} (${agent.key}) — answer in the first person, in this voice. Never claim to be a different agent.`);
+    if (agent.soul) lines.push(`SOUL (who you are):\n${agent.soul}`);
+    if (agent.memory) lines.push(`MEMORY (what you know):\n${agent.memory}`);
+  }
+  lines.push(
+    `You just called the tool ${tool} through an authorization gateway (it was allowed and executed).`,
+    "Answer the user's question in plain prose — no JSON, no tool calls, no capability talk.",
+    "Use ONLY what the tool returned; if it doesn't contain the answer, say what it does show.",
+    "Keep it short (max ~4 sentences), in character.",
+  );
+  return lines.join("\n");
+}
+
 // Free-text parse. Provider unset, timeout, refusal, malformed JSON, or true
 // small-talk → {tool: null}. Never throws, never touches the gateway.
 export async function parseFreeText(message: string, deps: ParseDeps = {}): Promise<ParsedIntent> {
