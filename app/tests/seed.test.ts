@@ -92,7 +92,7 @@ describe("seed", () => {
     expect(result1.policies).toBe(3);
     expect(result1.tasks).toBe(1);
     expect(afterDemo).toEqual(mid);
-    expect(afterDemo.agents).toBe(2);
+    expect(afterDemo.agents).toBe(4);
 
     const afterForeign = await foreignRows();
     expect(afterForeign.agentRows).toEqual(beforeForeign.agentRows);

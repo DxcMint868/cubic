@@ -11,6 +11,8 @@ import {
   intents, networkEvents, payments, policies, tasks, tenants, tools,
 } from "../src/server/db/schema";
 import { runToolCall } from "../src/server/gateway/orchestrator";
+import { StaticContextProvider, setContextProvider } from "../src/server/gateway/context/provider";
+import type { ContextProvider, FactsCtx, FactsIntentRef } from "../src/server/gateway/context/provider";
 import { seed } from "../src/server/demo/seed";
 import { GET as agentsGET } from "../src/app/api/console/agents/route";
 import { GET as profileGET } from "../src/app/api/console/agents/[id]/route";
@@ -26,12 +28,17 @@ let tenantId = "";
 let taskId = "";
 let agent8472Id = "";
 let lab1Id = "";
+const realProvider = new StaticContextProvider();
 
 function call(agentKey: string, tool: string, args: Record<string, unknown>) {
   return runToolCall({ task_id: taskId, agent_key: agentKey, tool, arguments: args });
 }
 
 beforeAll(async () => {
+  // Hermetic reputation: static provider for the file (env-independent).
+  // Live reads are proven outside vitest (curled 0.1 for lab-1) and covered
+  // by e2e.demo with the real key.
+  setContextProvider(new StaticContextProvider());
   await seed();
   const [tenant] = await db().select().from(tenants).where(eq(tenants.slug, TENANT));
   tenantId = tenant.id;
@@ -101,6 +108,7 @@ afterAll(async () => {
     await db().delete(networkEvents).where(eq(networkEvents.agentPseudonym, pseudo));
   }
   delete process.env.DEMO_TENANT_SLUG;
+  setContextProvider(new StaticContextProvider());
   delete (globalThis as Record<string, unknown>).__cubicConfig;
 }, 120000);
 
@@ -120,9 +128,20 @@ describe("per-agent grant enforcement", () => {
   }, 60000);
 
   it("lab-1 keeps its granted read (escalated on reputation, not grants)", async () => {
-    const read = await call("agent:lab-1", "github.get_pull_request", { repo: "acme/backend", pr: 421 });
-    expect(read.ok && read.data.decision).toBe("escalate");
-    expect(read.ok && read.data.matched_rule_id).not.toBe("agent-grant");
+    const stub: ContextProvider = {
+      getFacts: async (intent: FactsIntentRef, ctx: FactsCtx) => ({
+        ...(await realProvider.getFacts(intent, ctx)),
+        agent_reputation: 0.1,
+      }),
+    };
+    setContextProvider(stub);
+    try {
+      const read = await call("agent:lab-1", "github.get_pull_request", { repo: "acme/backend", pr: 421 });
+      expect(read.ok && read.data.decision).toBe("escalate");
+      expect(read.ok && read.data.matched_rule_id).not.toBe("agent-grant");
+    } finally {
+      setContextProvider(new StaticContextProvider());
+    }
   }, 60000);
 
   it("deploy-agent keeps full outcomes (grant is a narrowing, not a rewrite)", async () => {
@@ -173,8 +192,13 @@ describe("agent registry + profile API", () => {
     expect(body.ok).toBe(true);
     expect(body.data.agent_key).toBe("agent:8472");
     expect(body.data.name).toBe("deploy-agent");
-    expect(body.data.erc8004_identity).toBeNull();
-    expect(body.data.reputation).toMatchObject({ score: 0.95, source: "static", identity: null });
+    expect(body.data.erc8004_identity).toBe("11155111:10250");
+    // Source depends on live graph config (static hermetic / live / fallback);
+    // shape + identity echo are the contract here.
+    expect(body.data.reputation.identity).toBe("11155111:10250");
+    expect(["agent0-subgraph", "offline-fallback", "static"]).toContain(body.data.reputation.source);
+    expect(body.data.reputation.score).toBeGreaterThanOrEqual(0);
+    expect(body.data.reputation.score).toBeLessThanOrEqual(1);
     expect(body.data.granted_tools.map((t) => t.name).sort()).toEqual(
       ["deploy.production", "github.get_pull_request", "github.merge_pull_request", "github.read_file", "scanner.scan", "task.complete"].sort(),
     );
@@ -206,7 +230,7 @@ describe("agent registry + profile API", () => {
     expect(body.data.ungranted_tools.map((t) => t.name)).toContain("scanner.scan");
     expect(body.data.ungranted_tools.map((t) => t.name)).toContain("github.merge_pull_request");
     expect(body.data.reputation.identity).toBe("8453:74108");
-    expect(["agent0-subgraph", "offline-fallback"]).toContain(body.data.reputation.source);
+    expect(["agent0-subgraph", "offline-fallback", "static"]).toContain(body.data.reputation.source);
     expect(body.data.soul).toContain("damaged reputation");
     expect(body.data.memory).toContain("8453:74108");
   }, 30000);
