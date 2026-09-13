@@ -1,19 +1,41 @@
-FOOTAGE G — REPUTATION: LAB-1 → GRAPH PLAYGROUND + QUICKNODE (2:51–3:16)
-THE GRAPH BEAT. Two live external surfaces, preloaded BEFORE rolling:
-(a) The Graph playground with the agent query for 8453:74108 already run,
-raw feedback rows visible; (b) QuickNode agent page
-erc-8004.quicknode.com/agents/base-sepolia/9223 (our deploy-agent) as the
-beauty shot if time allows. Console: /console/agents → lab-1 profile first,
-then cut to the playground.
+FOOTAGE G — REPUTATION: LAB-1 → GRAPH PLAYGROUND (+ QUICKNODE) (2:43–3:08)
+THE GRAPH BEAT. Two surfaces: our chat/agents, then The Graph's own
+playground. Load and PRE-RUN everything below BEFORE rolling — no typing on
+the external site while cameras run.
 
-SHOT LIST
-1. 2:48–2:56 — chat: "As lab-1: read PR #421" → ESCALATE
-   reputation_below_threshold. Hold on the banner.
-2. 2:56–3:04 — /console/agents → lab-1 profile: reputation bar ~0.10,
-   SUBGRAPH DATA link visible.
-3. 3:04–3:13 — Graph playground: the same identity, the same negative
-   feedback — raw, on The Graph's infra. STILL 4s. (Optional 2s of the
-   QuickNode page if the take is smooth.)
+BEFORE ROLLING
+- Tab 1: /demo/chat (same session).
+- Tab 2: /console/agents.
+- Tab 3 (preloaded): The Graph playground —
+  https://thegraph.com/explorer/subgraphs/4yYAvQLFjBhBtdRCY7eUWo181VNoTSLLFd5M7FXQAi6u?view=Query&chain=arbitrum-one
+  with this query ALREADY RUN and results on screen:
+
+    query {
+      agent(id: "8453:74108") {
+        id
+        feedback(where: {isRevoked: false}) { value }
+      }
+    }
+
+  (Returns lab-1's live negative feedback — the values our gateway read.)
+- Tab 4 (optional beauty shot, preloaded):
+  https://erc-8004.quicknode.com/agents/base-sepolia/9223 — our deploy-agent
+  page. Use ONLY if the take is smooth; skip if time-pressed.
+
+STEPS (in order, with timing)
+1. [2:43] Tab 1: click "+ N MORE SCENARIOS" to expand, then click
+   "SCENARIO: LOW-REPUTATION READ (ESCALATES)". (This template pins the
+   lab-1 speaker itself — no dropdown change needed.)
+2. [2:45–2:52] Turn renders: ESCALATE banner + reason
+   reputation_below_threshold. HOLD 3s on the banner.
+3. [2:52] Cut to Tab 2: /console/agents. Click the
+   low-rep-research-agent row.
+4. [2:55–3:00] Profile: reputation bar ≈ 0.10, "live — Agent0 subgraph,
+   8453:74108" label, SUBGRAPH DATA — VERIFY ON THE GRAPH link. HOLD 3s.
+5. [3:00] Cut to Tab 3: the playground, results already run.
+6. [3:01–3:08] HANDS OFF. Hold on the raw feedback rows — negative values,
+   The Graph's own UI chrome visible. A paused frame must show identity
+   8453:74108 and the feedback values. Cut.
 
 VO (~60 words)
 

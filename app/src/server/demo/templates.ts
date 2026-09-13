@@ -67,6 +67,19 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     expect: { decision: "allow", reason: "policy_default_allow", matched_rule_id: "default-allow", payment_required: true },
   },
   {
+    // The settle beat: purchase on the seeded 50-cent task (25 cents fits the
+    // budget). Untyped in chat — a button, so the take never depends on the
+    // free model. Requires a funded operator + X402_PAY_TO_ACCOUNT.
+    id: "deploy-scan-buy",
+    label: "Scenario: buy the 25¢ scan (settles on Hedera)",
+    chat_text: "Buy the security scan for PR #421",
+    reply: "Buying the scan now — twenty-five cents, settling on Hedera.",
+    kind: "tool",
+    tool: "scanner.scan",
+    arguments: { target: "acme/backend#421", purchase: true, price_usd_cents: 25 },
+    expect: { decision: "allow", reason: "policy_default_allow", matched_rule_id: "default-allow" },
+  },
+  {
     id: "deploy-merge",
     label: "Scenario: merge PR #421 (escalates)",
     chat_text: "Merge PR #421 in acme/backend",

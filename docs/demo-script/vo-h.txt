@@ -1,17 +1,26 @@
-FOOTAGE H — HCS: VERIFY PAGE → HASHSCAN TOPIC (3:16–3:36)
-THE ANCHORING BEAT. Screen: a task trace's VERIFY ON HCS link (browser tab)
-→ monochrome verify page: per-event VERIFIED/PENDING/NOT-ANCHORED rows +
-HashScan topic link → click through to hashscan.io topic page (topic
-0.0.10517868), messages = fingerprints. Best evidence: the approval
-signature event from Footage E showing VERIFIED.
+FOOTAGE H — HCS: VERIFY PAGE → HASHSCAN TOPIC (3:08–3:28)
+THE ANCHORING BEAT. Best directly after Footage E so the approval signature
+is minutes old (mirror indexing lags seconds; older events can show PENDING).
 
-SHOT LIST
-1. 3:13–3:20 — verify page: rows with VERIFIED badges; the ledger.approval
-   .completed row in frame; hold 3s.
-2. 3:20–3:28 — click the topic link → HashScan topic page. Still. Messages
-   column shows sha256 fingerprints.
-3. 3:28–3:33 — back to the verify page, wide: "topic id, network, verified
-   count". Hold.
+BEFORE ROLLING
+- Tab: /console/approvals, the Footage-E approval resolved and visible in
+  RESOLVED section (SIGNED + address).
+
+STEPS (in order, with timing)
+1. [3:08] On the resolved approval card, click "VERIFY ON HCS →". It opens
+   a new tab: the monochrome verify page for that task.
+2. [3:10–3:17] Verify page: rows of events, each with a fingerprint and a
+   badge. Scroll slowly so the ledger.approval.completed row (the signed
+   approval from Footage E) passes through center. Stop with it in frame.
+   HOLD 3s: badge VERIFIED = the exact bytes are on Hedera. (If it reads
+   PENDING: wait 10s, reload the page once — mirror lag. If still PENDING,
+   hold on any VERIFIED row and narrate the mechanism; never narrate
+   "pending" as failure.)
+3. [3:18] Click the HashScan topic link on the page
+   (hashscan.io/testnet/topic/0.0.10517868).
+4. [3:20–3:28] HashScan topic page: messages column = sha256 fingerprints
+   submitted by the gateway. HANDS OFF. Hold so a paused frame shows the
+   topic id and a couple of fingerprint rows. Cut at 3:28.
 
 VO (~50 words)
 

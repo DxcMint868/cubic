@@ -1,19 +1,36 @@
-FOOTAGE D — X402: 402 → PURCHASE → PAYMENTS → HASHSCAN (1:21–1:56)
-THE HEDERA BEAT. Screen: /demo/chat (same session), then /console/payments,
-then hashscan.io. Sequence: free text "run the security scan on PR #421" →
-402 discovery (payment required line) → the purchase completes → payment
-completed one-liner + receipt → cut to Payments console → click the
-settlement ref → HashScan transaction page (real HBAR transfer, 25¢).
+FOOTAGE D — X402: 402 → SETTLE → PAYMENTS → HASHSCAN (1:13–1:48)
+THE HEDERA BEAT. Real money moves (25 cents testnet HBAR). Operator must be
+funded and X402_PAY_TO_ACCOUNT set, or the settle fails on camera.
 
-SHOT LIST
-1. 1:18–1:26 — send the scan message; THINKING; the payment-required line
-   appears ("payment required $0.25 · hedera").
-2. 1:26–1:34 — the settled turn: payment completed one-liner with short ref;
-   hold 3s.
-3. 1:34–1:42 — cut to /console/payments: settled total ticks, the new row on
-   top. Cursor to the settlement ref (now a link).
-4. 1:42–1:53 — click → HashScan transaction page. STILL. Let the judge read:
-   transfers, timestamp, account ids. No scrolling needed; zoom if legal.
+BEFORE ROLLING
+- Same chat session as Footage C (deploy-agent speaker).
+- Second browser tab already open on /console/payments (pinned aside).
+- Operator HBAR balance ≥ 5 HBAR. Test one purchase BEFORE the take
+  (25¢ is ~0.075 HBAR; rehearse spends real money — one rehearsal run OK).
+
+STEPS (in order, with timing)
+1. [1:13] In chat, click the pinned button "SCENARIO: SCAN PR #421 ($0.25)".
+2. [1:15–1:22] Turn renders: ALLOW banner + the payment line
+   "payment required $0.25 · hedera" + receipt tagged (challenge).
+   Scroll it into frame. HOLD 4s — this is the 402 challenge moment.
+3. [1:22] Click the button under "+ MORE SCENARIOS" expander if needed:
+   "SCENARIO: BUY THE 25¢ SCAN (SETTLES ON HEDERA)".
+4. [1:24–1:34] THINKING dots run longer (payment round-trips the
+   facilitator: verify + settle, 5–20s). Do nothing. The turn then shows:
+   payment completed one-liner (amount · hedera · short ref) + receipt line
+   tagged (settlement). HOLD 4s.
+5. [1:35] Cut to the /console/payments tab. The top row is the new payment:
+   $0.25, COMPLETED. Settled total at the top ticks up. Cursor to the
+   settlement ref — it is a link.
+6. [1:38] Click the settlement ref. HashScan opens the transaction page.
+7. [1:40–1:48] HashScan: HANDS OFF MOUSE. Hold still so a paused frame
+   shows: transfers, amount, timestamp, account ids. Cut at 1:48.
+
+FAILURE MODES
+- Turn errors with payment failed → the facilitator or balance is off;
+  retake after checking the operator balance. Never narrate a failed take.
+- HashScan slow to load (>4s) → keep rolling, it lands; HashScan stillness
+  matters more than speed.
 
 VO (~75 words)
 

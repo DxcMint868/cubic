@@ -30,7 +30,8 @@ pipeline, identities, payments, and anchoring are real.
    `OPENROUTER_API_KEY`, `APPROVER_PRIVATE_KEYS`, wallet connected in browser.
 2. Make the A2 title card first (a plain PNG/slide, monochrome) so the edit
    has it ready.
-3. Footage C, D, F (chat takes) — several takes each, keep the best.
+3. Footage C, D, F (chat takes) — several takes each, keep the best. D
+   settles real money: one rehearsal purchase, then the take.
 4. Footage E (two-tab) — needs the chat take's merge escalation live; record
    both tabs in one screen capture.
 5. Footage G (reputation) — live web, load pages BEFORE rolling.

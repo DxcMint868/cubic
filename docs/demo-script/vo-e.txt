@@ -1,20 +1,38 @@
-FOOTAGE E — TWO-TAB APPROVAL: MERGE → SIGN → EXECUTE (1:56–2:31)
-THE APPROVAL BEAT. Two tabs side by side, ONE screen recording: left
-/demo/chat (executor, deploy-agent), right /console/approvals (approver,
-wallet already connected). Sequence: chat "Merge PR #421" → escalate; the
-request appears in the right tab within ~2s (no refresh); click SIGN &
-APPROVE → wallet popup signs → resolve completes → back on the left, the
-escalated turn patches itself: execution summary + follow-up line.
+FOOTAGE E — TWO-TAB APPROVAL: MERGE → SIGN → EXECUTE (1:48–2:23)
+THE APPROVAL BEAT. ONE screen recording, two browser windows TILED side by
+side (macOS: hover the green traffic-light → "Tile Window to Left/Right").
+LEFT = /demo/chat (deploy-agent session). RIGHT = /console/approvals with
+the wallet ALREADY connected (address chip visible top-right) BEFORE rolling.
 
-SHOT LIST
-1. 1:53–2:01 — left tab: "Merge PR #421" sent; ESCALATE banner; the reply
-   says it needs a human.
-2. 2:01–2:08 — right tab: the request lands live (badge ticks up). Hold so
-   the viewer registers the liveness.
-3. 2:08–2:18 — SIGN & APPROVE → the wallet popup. Hold on the popup one
-   beat — the message text should be legible — then confirm.
-4. 2:18–2:28 — left tab patches: capability → execution succeeded →
-   follow-up. Hold 4s on the completed chain.
+BEFORE ROLLING
+- Tile the windows. Left slightly wider (~60/40) — the chat turn must be
+  readable.
+- On the right, confirm no pending approvals from earlier tests (reseed if
+  the queue is dirty).
+- Wallet unlocked. The popup (personal_sign) needs no gas — any account works.
+
+STEPS (in order, with timing)
+1. [1:48] LEFT: click the pinned button "SCENARIO: MERGE PR #421 (ESCALATES)".
+2. [1:50–1:57] LEFT: turn renders ESCALATE banner (outlined) + reply "Merge
+   requested. That's high-risk — it'll need a human." Do nothing else.
+3. [1:57] Move mouse to the RIGHT window. The queue badge ticks to 1 and the
+   new card is on top (2s poll — it lands within ~2s of the escalation).
+   HOLD 3s on the card: RULE merge-risk, COUNCIL DEPLOY-COUNCIL,
+   risk_requires_approval tag.
+4. [2:02] RIGHT: click "SIGN & APPROVE".
+5. [2:04–2:12] The wallet popup appears. PAUSE — let the viewer read the
+   sign request (message: "Cubic approval / approval: <id> / outcome:
+   approved"). Confirm/sign in the wallet. Popup closes.
+6. [2:12–2:23] RIGHT: card flips to RESOLVED — SIGNED <address>. Then move
+   to LEFT: within ~3s the escalated turn patches itself — execution
+   summary + the agent's follow-up line (GENERATING ANSWER state, then the
+   emphasized answer). HOLD 5s on the completed chain. Cut.
+
+FAILURE MODES
+- Wallet popup doesn't appear → the connector dropped; reconnect wallet,
+  reseed, retake (the escalation burns one approval — reseed clears it).
+- Left tab doesn't patch → the 3s poll missed; click the task's TRACE link
+  on the right card as fallback footage (trace shows the same chain).
 
 VO (~85 words)
 
