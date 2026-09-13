@@ -45,10 +45,18 @@ interface Reputation {
   feedbackCount: number;
 }
 
-// Verified URL (PROJECT.md §17 links): the Agent0 subgraph docs — the
-// per-agent explorer deep link format is not pinned, so link docs, never a
-// fabricated explorer URL.
+// Verified URLs: the Agent0 subgraph docs, plus the explorer playground with
+// the agent query PRE-FILLED via the ?query= param (the explorer UI pre-loads
+// it into the editor; running it is one click — auto-run is not a documented
+// explorer behavior, so the UI never claims it).
 const SUBGRAPH_DOCS_URL = "https://thegraph.com/docs/en/subgraphs/existing-subgraphs/agent0/";
+const SUBGRAPH_PLAYGROUND_BASE =
+  "https://thegraph.com/explorer/subgraphs/4yYAvQLFjBhBtdRCY7eUWo181VNoTSLLFd5M7FXQAi6u?view=Query&chain=arbitrum-one&query=";
+
+export function subgraphPlaygroundUrl(identity: string): string {
+  const query = `query {\n  agent(id: "${identity}") {\n    id\n    owner\n    registrationFile { name description }\n    feedback(where: { isRevoked: false }) { value clientAddress }\n    validations(first: 1) { status response }\n  }\n}`;
+  return SUBGRAPH_PLAYGROUND_BASE + encodeURIComponent(query);
+}
 
 // Same semantics as AutoContextProvider: a real identity + graph config reads
 // the live subgraph (full trust object); anything else is the labeled static
@@ -126,6 +134,9 @@ export async function GET(
         erc8004_identity: agent.erc8004Identity,
         reputation,
         subgraph_docs_url: SUBGRAPH_DOCS_URL,
+        subgraph_playground_url: agent.erc8004Identity
+          ? subgraphPlaygroundUrl(agent.erc8004Identity)
+          : SUBGRAPH_DOCS_URL,
         granted_tools: toolRows
           .filter((t) => grants.has(t.name))
           .map((t) => ({
